@@ -102,7 +102,7 @@ struct BackButton: View {
                 Text("Home")
                     .font(.system(size: 16, weight: .semibold, design: .rounded))
             }
-            .foregroundColor(.white)
+            .foregroundColor(GameConstants.UI.primaryText)
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
             .background(
@@ -135,62 +135,148 @@ struct LevelIndicator: View {
     }
 }
 
-// MARK: - GameStatsView.swift
+// MARK: - Futuristic Game Stats
 struct GameStatsView: View {
     @EnvironmentObject var gameState: GameState
     @EnvironmentObject var gameManager: GameManager
+    @State private var pulseAnimation = false
     
     private var pointsNeeded: Int {
         LevelConfiguration.pointsNeeded(for: gameState.selectedLevel)
     }
     
     var body: some View {
-        HStack {
-            ScoreSection(
+        HStack(spacing: 20) {
+            // Futuristic Score Display
+            FuturisticScoreDisplay(
                 score: gameManager.score,
-                pointsNeeded: pointsNeeded
+                pointsNeeded: pointsNeeded,
+                pulseAnimation: $pulseAnimation
             )
             
             Spacer()
             
-            TimerSection(
+            // Futuristic Timer Display
+            FuturisticTimerDisplay(
                 timeRemaining: gameManager.timeRemaining,
                 isComplete: gameManager.levelComplete
             )
         }
-        .padding()
+        .padding(.horizontal, 20)
+        .padding(.vertical, 15)
         .background(
-            RoundedRectangle(cornerRadius: 0)
+            RoundedRectangle(cornerRadius: 25)
                 .fill(.ultraThinMaterial)
-                .opacity(0.8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 25)
+                        .stroke(
+                            LinearGradient(
+                                colors: [GameConstants.UI.accent.opacity(0.3), GameConstants.UI.success.opacity(0.2)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            ),
+                            lineWidth: 1
+                        )
+                )
+                .shadow(color: GameConstants.UI.accent.opacity(0.2), radius: 10, x: 0, y: 5)
         )
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
+                pulseAnimation = true
+            }
+        }
     }
 }
 
-struct ScoreSection: View {
+// MARK: - Futuristic Score Display
+struct FuturisticScoreDisplay: View {
     let score: Int
     let pointsNeeded: Int
+    @Binding var pulseAnimation: Bool
     @State private var displayScore: Int = 0
+    @State private var progressAnimation = false
+    
+    private var progress: Double {
+        Double(min(displayScore, pointsNeeded)) / Double(pointsNeeded)
+    }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("\(displayScore)/\(pointsNeeded)")
-                .font(.system(size: 24, weight: .black, design: .rounded))
-                .foregroundStyle(
-                    LinearGradient(colors: [.white, .cyan.opacity(0.8)], startPoint: .top, endPoint: .bottom)
-                )
-                .contentTransition(.numericText())
+        VStack(alignment: .leading, spacing: 8) {
+            // Score Label
+            Text("SCORE")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundColor(GameConstants.UI.secondaryText)
+                .tracking(1.2)
             
-            ProgressView(value: Double(min(displayScore, pointsNeeded)), total: Double(pointsNeeded))
-                .progressViewStyle(.linear)
-                .tint(.cyan)
-                .scaleEffect(y: 3)
-                .frame(width: 120)
-                .animation(.spring(response: 0.5, dampingFraction: 0.8), value: displayScore)
+            // Score Display with Animation
+            HStack(spacing: 8) {
+                Text("\(displayScore)")
+                    .font(.system(size: 32, weight: .black, design: .rounded))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [GameConstants.UI.accent, GameConstants.UI.warning],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .contentTransition(.numericText())
+                    .scaleEffect(progressAnimation ? 1.05 : 1.0)
+                
+                Text("/")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundColor(GameConstants.UI.tertiaryText)
+                
+                Text("\(pointsNeeded)")
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                    .foregroundColor(GameConstants.UI.secondaryText)
+            }
+            
+            // Futuristic Progress Bar
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    // Background track
+                    Capsule()
+                        .fill(GameConstants.UI.divider)
+                        .frame(height: 8)
+                    
+                    // Progress fill with gradient
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    GameConstants.UI.success,
+                                    GameConstants.UI.accent,
+                                    GameConstants.UI.warning
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: geometry.size.width * progress, height: 8)
+                        .shadow(color: GameConstants.UI.accent.opacity(0.5), radius: 4, x: 0, y: 0)
+                        .animation(.spring(response: 0.5, dampingFraction: 0.7), value: progress)
+                    
+                    // Glow effect at progress end
+                    if progress > 0 {
+                        Circle()
+                            .fill(GameConstants.UI.accent)
+                            .frame(width: 12, height: 12)
+                            .blur(radius: pulseAnimation ? 6 : 3)
+                            .offset(x: max(0, geometry.size.width * progress - 6))
+                    }
+                }
+            }
+            .frame(width: 150, height: 8)
         }
         .onChange(of: score) { _, newValue in
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
                 displayScore = newValue
+                progressAnimation = true
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                progressAnimation = false
             }
         }
         .onAppear {
@@ -199,25 +285,97 @@ struct ScoreSection: View {
     }
 }
 
-struct TimerSection: View {
+// MARK: - Futuristic Timer Display
+struct FuturisticTimerDisplay: View {
     let timeRemaining: Int
     let isComplete: Bool
+    @State private var timerPulse = false
+    @State private var criticalTime = false
     
     var body: some View {
-        VStack(alignment: .trailing, spacing: 4) {
+        VStack(alignment: .trailing, spacing: 8) {
+            // Timer Label
+            Text(isComplete ? "STATUS" : "TIME")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundColor(GameConstants.UI.secondaryText)
+                .tracking(1.2)
+            
             if isComplete {
-                Text("COMPLETE!")
-                    .font(.system(size: 18, weight: .black, design: .rounded))
-                    .foregroundStyle(
-                        LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing)
-                    )
-                    .shadow(color: .green, radius: 10)
+                // Completion Status
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundColor(GameConstants.UI.success)
+                    
+                    Text("DONE")
+                        .font(.system(size: 18, weight: .black, design: .rounded))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [GameConstants.UI.success, GameConstants.UI.accent],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                }
+                .scaleEffect(timerPulse ? 1.1 : 1.0)
             } else {
-                Text("\(timeRemaining)s")
-                    .font(.system(size: 24, weight: .black, design: .rounded))
-                    .foregroundStyle(
-                        LinearGradient(colors: [.white, .pink.opacity(0.8)], startPoint: .top, endPoint: .bottom)
-                    )
+                // Circular Timer Display
+                ZStack {
+                    // Background circle
+                    Circle()
+                        .stroke(GameConstants.UI.divider, lineWidth: 4)
+                        .frame(width: 60, height: 60)
+                    
+                    // Timer progress circle
+                    Circle()
+                        .trim(from: 0, to: CGFloat(timeRemaining) / 60.0)
+                        .stroke(
+                            LinearGradient(
+                                colors: criticalTime ? 
+                                    [GameConstants.UI.danger, GameConstants.UI.warning] :
+                                    [GameConstants.UI.accent, GameConstants.UI.success],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            style: StrokeStyle(lineWidth: 4, lineCap: .round)
+                        )
+                        .frame(width: 60, height: 60)
+                        .rotationEffect(.degrees(-90))
+                        .shadow(color: criticalTime ? GameConstants.UI.danger.opacity(0.5) : GameConstants.UI.accent.opacity(0.3), radius: 4)
+                    
+                    // Time text
+                    VStack(spacing: 0) {
+                        Text("\(timeRemaining)")
+                            .font(.system(size: 24, weight: .black, design: .rounded))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: criticalTime ?
+                                        [GameConstants.UI.danger, GameConstants.UI.warning] :
+                                        [GameConstants.UI.primaryText, GameConstants.UI.secondaryText],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                        
+                        Text("sec")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(GameConstants.UI.tertiaryText)
+                    }
+                    .scaleEffect(timerPulse ? 1.05 : 1.0)
+                }
+            }
+        }
+        .onChange(of: timeRemaining) { _, newValue in
+            if newValue <= 10 && !criticalTime {
+                withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) {
+                    criticalTime = true
+                    timerPulse = true
+                }
+            }
+        }
+        .onChange(of: isComplete) { _, _ in
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                timerPulse = true
             }
         }
     }
@@ -339,7 +497,7 @@ struct GameButton: View {
                         radius: 10
                     )
             )
-            .foregroundColor(.white)
+            .foregroundColor(GameConstants.UI.primaryText)
         }
         .scaleEffect(isActive ? 0.95 : 1.0)
         .animation(.spring(duration: 0.2), value: isActive)

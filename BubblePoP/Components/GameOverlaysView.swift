@@ -93,11 +93,11 @@ struct LevelCompleteOverlay: View {
                 }
                 .scaleEffect(scale)
             }
-            .padding(40)
+            .padding(GameConstants.cardPadding * 1.5)
             .background(
-                RoundedRectangle(cornerRadius: 30)
-                    .fill(.ultraThinMaterial)
-                    .shadow(color: .black.opacity(0.3), radius: 20)
+                RoundedRectangle(cornerRadius: GameConstants.cornerRadius * 1.2)
+                    .fill(GameConstants.UI.cardMaterial)
+                    .shadow(color: GameConstants.cardShadow, radius: 24, x: 0, y: 12)
             )
             .scaleEffect(scale)
         }
@@ -197,11 +197,11 @@ struct LevelFailedOverlay: View {
                     }
                 }
             }
-            .padding(40)
+            .padding(GameConstants.cardPadding * 1.5)
             .background(
-                RoundedRectangle(cornerRadius: 30)
-                    .fill(.ultraThinMaterial)
-                    .shadow(color: .black.opacity(0.3), radius: 20)
+                RoundedRectangle(cornerRadius: GameConstants.cornerRadius * 1.2)
+                    .fill(GameConstants.UI.cardMaterial)
+                    .shadow(color: GameConstants.cardShadow, radius: 24, x: 0, y: 12)
             )
             .scaleEffect(scale)
             .offset(x: CGFloat(shake))

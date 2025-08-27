@@ -38,6 +38,10 @@ class GameManager: ObservableObject {
     private var negativeSpawned = 0
     private var currentLevel = 1
     
+    // Distribution tracking
+    private var recentSpawnPositions: [CGPoint] = []
+    private let minSpawnDistance: Double = 60.0 // Reduced for better distribution
+    
     func setupGame(level: Int) {
         currentLevel = level
         resetGameState()
@@ -54,6 +58,7 @@ class GameManager: ObservableObject {
         negativeSpawned = 0
         levelComplete = false
         gameResult = nil
+        recentSpawnPositions = [] // Clear spawn history
         
         startSpawning()
         startGameTimer()
@@ -125,10 +130,16 @@ class GameManager: ObservableObject {
             pointsNeeded: LevelConfiguration.pointsNeeded(for: currentLevel)
         )
         
-        let balloon = BalloonSpawner.createBalloon(
+        let (balloon, spawnPosition) = BalloonSpawner.createBalloon(
             level: currentLevel,
-            isPositive: shouldSpawnPositive
+            isPositive: shouldSpawnPositive,
+            recentPositions: recentSpawnPositions,
+            minDistance: minSpawnDistance
         )
+        
+        // Track this spawn position
+        recentSpawnPositions.append(spawnPosition)
+        print("🎯 New spawn at y=\(Int(spawnPosition.y)), recent positions: \(recentSpawnPositions.count)")
         
         // Update spawn counters
         if balloon.isPositive {
@@ -165,6 +176,16 @@ class GameManager: ObservableObject {
     private func removeBalloon(_ balloon: GameBalloon) {
         withAnimation(.easeOut(duration: 0.2)) {
             balloons.removeAll { $0.id == balloon.id }
+        }
+        
+        // Clean up spawn positions that are no longer needed
+        cleanupOldSpawnPositions()
+    }
+    
+    private func cleanupOldSpawnPositions() {
+        // Keep only the most recent 8 spawn positions to avoid too much clustering
+        if recentSpawnPositions.count > 8 {
+            recentSpawnPositions = Array(recentSpawnPositions.suffix(8))
         }
     }
     
@@ -240,15 +261,57 @@ struct BalloonSpawner {
         }
     }
     
-    static func createBalloon(level: Int, isPositive: Bool) -> GameBalloon {
+    static func createBalloon(level: Int, isPositive: Bool, recentPositions: [CGPoint] = [], minDistance: Double = 60.0) -> (GameBalloon, CGPoint) {
         let pointRange = LevelConfiguration.pointRange(for: level, isPositive: isPositive)
+        let points = Int.random(in: pointRange)
         
-        return GameBalloon(
-            x: Double.random(in: GameConstants.balloonSpawnArea.x),
-            y: Double.random(in: GameConstants.balloonSpawnArea.y),
+        // Calculate balloon size to avoid spawning large balloons too close to edges (same formula as BalloonView)
+        let sizeMultiplier = max(0.4, 0.3 + (Double(points) * 0.2))
+        let balloonHeight = GameConstants.balloonSize.height * sizeMultiplier
+        
+        // Adjust spawn area based on balloon size - keep large balloons well away from bottom
+        let maxY = GameConstants.balloonSpawnArea.y.upperBound - (balloonHeight * 0.5)
+        let safeMaxY = min(maxY, 480.0) // Never go below y=480 regardless of size
+        
+        // Find a good spawn position with proper distribution
+        var position = CGPoint.zero
+        var attempts = 0
+        let maxAttempts = 20
+        
+        repeat {
+            // Use weighted distribution to favor upper areas and avoid clustering at bottom
+            let yRange = safeMaxY - GameConstants.balloonSpawnArea.y.lowerBound
+            let randomValue = Double.random(in: 0...1)
+            
+            // Square the random value to bias toward smaller numbers (upper screen)
+            let biasedValue = pow(randomValue, 1.5) // This biases toward upper screen
+            let yPosition = GameConstants.balloonSpawnArea.y.lowerBound + (biasedValue * yRange)
+            
+            position = CGPoint(
+                x: Double.random(in: GameConstants.balloonSpawnArea.x),
+                y: yPosition
+            )
+            attempts += 1
+            
+            // Check if this position is far enough from recent spawns
+            let tooClose = recentPositions.contains { recentPos in
+                let distance = sqrt(pow(position.x - recentPos.x, 2) + pow(position.y - recentPos.y, 2))
+                return distance < minDistance
+            }
+            
+            if !tooClose || attempts >= maxAttempts {
+                break
+            }
+        } while true
+        
+        let balloon = GameBalloon(
+            x: position.x,
+            y: position.y,
             isPositive: isPositive,
-            points: Int.random(in: pointRange),
+            points: points,
             color: GameConstants.balloonColors.randomElement() ?? GameConstants.balloonColors[0]
         )
+        
+        return (balloon, position)
     }
 }
