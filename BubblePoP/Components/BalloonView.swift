@@ -16,7 +16,6 @@ struct BalloonView: View {
         // EXTREME scaling to make size differences impossible to miss
         // 1 point = 0.5x (tiny), 2 points = 0.7x (small), 5 points = 1.3x (big), 10 points = 2.3x (huge!)
         let multiplier = 0.3 + (absPoints * 0.2) // VERY aggressive scaling
-        print("   🔍 Points: \(balloon.points) → Multiplier: \(String(format: "%.2f", multiplier)) → Final size: \(String(format: "%.0f", GameConstants.balloonSize.width * multiplier))")
         return max(0.4, multiplier)
     }
     
@@ -66,9 +65,6 @@ struct BalloonView: View {
             onTap()
         }
         .onAppear {
-            // Debug: Log detailed balloon sizing info
-            print("🎈 Balloon: \(balloon.points)pts → multiplier: \(String(format: "%.2f", sizeMultiplier)) → size: \(String(format: "%.0f", balloonWidth))x\(String(format: "%.0f", balloonHeight))")
-            print("   Base size: \(GameConstants.balloonSize.width)x\(GameConstants.balloonSize.height)")
             setupAnimations()
         }
     }

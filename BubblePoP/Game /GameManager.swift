@@ -139,7 +139,6 @@ class GameManager: ObservableObject {
         
         // Track this spawn position
         recentSpawnPositions.append(spawnPosition)
-        print("🎯 New spawn at y=\(Int(spawnPosition.y)), recent positions: \(recentSpawnPositions.count)")
         
         // Update spawn counters
         if balloon.isPositive {
