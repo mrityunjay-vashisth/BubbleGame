@@ -18,14 +18,12 @@ class GameState: ObservableObject {
     }
     
     func completeLevel(_ level: Int) {
-        print("🎉 Level \(level) completed! Unlocking level \(level + 1)")
         DispatchQueue.main.async {
             self.completedLevels.insert(level)
             
             // Unlock next level if not already unlocked
             if level < 50 {
                 self.unlockedLevels.insert(level + 1)
-                print("✅ Level \(level + 1) now unlocked. Total unlocked: \(self.unlockedLevels.sorted())")
             }
             
             // Reset failure count

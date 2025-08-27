@@ -64,12 +64,10 @@ struct GameView: View {
         
         switch result {
         case .completed:
-            print("🎮 Game completed for level \(gameState.selectedLevel)")
             // Complete level immediately for unlock logic
             gameState.completeLevel(gameState.selectedLevel)
             // Don't go home yet - let the overlay handle it
         case .failed:
-            print("💔 Game failed for level \(gameState.selectedLevel)")
             gameState.failLevel(gameState.selectedLevel)
             // Don't go home yet - let the overlay handle it
         }

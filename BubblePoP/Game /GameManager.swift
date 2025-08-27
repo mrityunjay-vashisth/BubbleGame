@@ -177,7 +177,6 @@ class GameManager: ObservableObject {
         waterLevel = 1.0
         showLevelUp = true
         
-        print("🎊 Setting showLevelUp = true, should show overlay now")
         
         // Delay setting gameResult so overlay can show first
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {

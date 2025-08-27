@@ -102,7 +102,6 @@ struct LevelCompleteOverlay: View {
             .scaleEffect(scale)
         }
         .onAppear {
-            print("🎉 Level completion overlay appeared!")
             withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
                 scale = 1.0
                 rotation = 0
