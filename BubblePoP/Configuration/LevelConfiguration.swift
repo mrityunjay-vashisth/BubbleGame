@@ -34,9 +34,15 @@ struct LevelConfiguration {
     
     static func pointRange(for level: Int, isPositive: Bool) -> ClosedRange<Int> {
         if isPositive {
-            return level <= 3 ? 1...2 : 1...3
+            // Positive balloons: 1 to level (NO LIMITS! CHAOS!)
+            let range = 1...level
+            print("Level \(level) positive range: \(range)")
+            return range
         } else {
-            return level <= 2 ? 1...1 : 1...2
+            // Negative balloons: 1 to level (MAXIMUM CHAOS!)
+            let range = 1...level
+            print("Level \(level) negative range: \(range)")
+            return range
         }
     }
     

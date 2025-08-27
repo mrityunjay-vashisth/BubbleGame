@@ -1,10 +1,20 @@
 // MARK: - GameManager.swift
 import SwiftUI
 import Combine
+#if os(iOS)
+import UIKit
+#endif
 
 enum GameResult {
     case completed
     case failed
+}
+
+struct PopEffect: Identifiable {
+    let id = UUID()
+    let position: CGPoint
+    let color: Color
+    let isPositive: Bool
 }
 
 class GameManager: ObservableObject {
@@ -14,6 +24,7 @@ class GameManager: ObservableObject {
     @Published var timeRemaining = 60
     @Published var waterLevel: Double = 0.0
     @Published var showPopAnimation = false
+    @Published var popEffects: [PopEffect] = []
     @Published var levelComplete = false
     @Published var showLevelUp = false
     @Published var showFailure = false
@@ -63,12 +74,23 @@ class GameManager: ObservableObject {
         }
         
         updateWaterLevel()
-        triggerPopAnimation()
+        triggerPopAnimation(at: CGPoint(x: balloon.x, y: balloon.y), color: balloon.color, isPositive: balloon.isPositive)
         removeBalloon(balloon)
+        
+        #if os(iOS)
+        let impactFeedback = UIImpactFeedbackGenerator(style: balloon.isPositive ? .light : .medium)
+        impactFeedback.prepare()
+        impactFeedback.impactOccurred()
+        #endif
         
         if score >= LevelConfiguration.pointsNeeded(for: currentLevel) {
             completeLevel()
         }
+    }
+    
+    func retryLevel() {
+        showFailure = false
+        startGame()
     }
     
     private func startGameTimer() {
@@ -131,10 +153,12 @@ class GameManager: ObservableObject {
         waterLevel = min(Double(score) / Double(LevelConfiguration.pointsNeeded(for: currentLevel)), 1.0)
     }
     
-    private func triggerPopAnimation() {
-        showPopAnimation = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            self.showPopAnimation = false
+    private func triggerPopAnimation(at position: CGPoint, color: Color, isPositive: Bool) {
+        let effect = PopEffect(position: position, color: color, isPositive: isPositive)
+        popEffects.append(effect)
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            self.popEffects.removeAll { $0.id == effect.id }
         }
     }
     
@@ -153,7 +177,10 @@ class GameManager: ObservableObject {
         waterLevel = 1.0
         showLevelUp = true
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+        print("🎊 Setting showLevelUp = true, should show overlay now")
+        
+        // Delay setting gameResult so overlay can show first
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             self.gameResult = .completed
         }
     }
@@ -167,9 +194,8 @@ class GameManager: ObservableObject {
         failureMessage = "Time's up! Try again to improve your score."
         showFailure = true
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            self.gameResult = .failed
-        }
+        // Set result immediately
+        gameResult = .failed
     }
     
     private func resetGameState() {
@@ -225,199 +251,5 @@ struct BalloonSpawner {
             points: Int.random(in: pointRange),
             color: GameConstants.balloonColors.randomElement() ?? GameConstants.balloonColors[0]
         )
-    }
-}
-
-// MARK: - GameOverlaysView.swift
-import SwiftUI
-
-struct GameOverlaysView: View {
-    @EnvironmentObject var gameState: GameState
-    @EnvironmentObject var gameManager: GameManager
-    
-    var body: some View {
-        ZStack {
-            if gameManager.showLevelUp {
-                LevelCompleteOverlay()
-                    .environmentObject(gameState)
-                    .environmentObject(gameManager)
-            }
-            
-            if gameManager.showFailure {
-                LevelFailedOverlay()
-                    .environmentObject(gameManager)
-            }
-        }
-    }
-}
-
-struct LevelCompleteOverlay: View {
-    @EnvironmentObject var gameState: GameState
-    @EnvironmentObject var gameManager: GameManager
-    
-    var body: some View {
-        VStack(spacing: 16) {
-            Text("🎉 LEVEL COMPLETE! 🎉")
-                .font(.system(size: 28, weight: .black, design: .rounded))
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [.yellow, .orange, .pink],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .shadow(color: .orange, radius: 20)
-            
-            Text("Level \(gameState.selectedLevel) Complete!")
-                .font(.system(size: 20, weight: .bold, design: .rounded))
-                .foregroundColor(.white)
-                .shadow(color: .black, radius: 5)
-            
-            Button("Continue") {
-                gameManager.gameResult = .completed
-            }
-            .font(.system(size: 16, weight: .semibold, design: .rounded))
-            .padding(.horizontal, 24)
-            .padding(.vertical, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing))
-            )
-            .foregroundColor(.white)
-        }
-        .padding(32)
-        .background(
-            RoundedRectangle(cornerRadius: 24)
-                .fill(.ultraThinMaterial)
-                .opacity(0.95)
-                .shadow(color: .black.opacity(0.3), radius: 20)
-        )
-        .scaleEffect(gameManager.showLevelUp ? 1.0 : 0.1)
-        .opacity(gameManager.showLevelUp ? 1.0 : 0.0)
-        .animation(.spring(duration: GameConstants.levelUpAnimationDuration, bounce: 0.4), value: gameManager.showLevelUp)
-    }
-}
-
-struct LevelFailedOverlay: View {
-    @EnvironmentObject var gameManager: GameManager
-    
-    var body: some View {
-        VStack(spacing: 16) {
-            Text("⏰ TIME'S UP!")
-                .font(.system(size: 24, weight: .black, design: .rounded))
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [.red, .orange],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .shadow(color: .red, radius: 15)
-            
-            Text(gameManager.failureMessage)
-                .font(.system(size: 16, weight: .medium, design: .rounded))
-                .foregroundColor(.white.opacity(0.9))
-                .multilineTextAlignment(.center)
-                .shadow(color: .black, radius: 3)
-            
-            Text("⚠️ Warning: 3 failures lock previous level")
-                .font(.system(size: 12, weight: .medium, design: .rounded))
-                .foregroundColor(.yellow.opacity(0.8))
-                .multilineTextAlignment(.center)
-            
-            HStack(spacing: 16) {
-                Button("Try Again") {
-                    gameManager.showFailure = false
-                    gameManager.startGame()
-                }
-                .font(.system(size: 14, weight: .semibold, design: .rounded))
-                .padding(.horizontal, 20)
-                .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(LinearGradient(colors: [.blue, .cyan], startPoint: .leading, endPoint: .trailing))
-                )
-                .foregroundColor(.white)
-                
-                Button("Back to Home") {
-                    gameManager.gameResult = .failed
-                }
-                .font(.system(size: 14, weight: .semibold, design: .rounded))
-                .padding(.horizontal, 20)
-                .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(LinearGradient(colors: [.gray, .gray.opacity(0.8)], startPoint: .leading, endPoint: .trailing))
-                )
-                .foregroundColor(.white)
-            }
-        }
-        .padding(24)
-        .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(.ultraThinMaterial)
-                .opacity(0.95)
-                .shadow(color: .black.opacity(0.4), radius: 20)
-        )
-        .scaleEffect(gameManager.showFailure ? 1.0 : 0.1)
-        .opacity(gameManager.showFailure ? 1.0 : 0.0)
-        .animation(.spring(duration: 0.5, bounce: 0.3), value: gameManager.showFailure)
-    }
-}
-
-// MARK: - WaterFillView.swift
-struct WaterFillView: View {
-    let waterLevel: Double
-    let geometry: GeometryProxy
-    
-    var body: some View {
-        VStack {
-            Spacer()
-            Rectangle()
-                .fill(GameConstants.waterGradient)
-                .frame(height: geometry.size.height * waterLevel)
-                .overlay(
-                    VStack {
-                        ModernWaveShape()
-                            .fill(
-                                LinearGradient(
-                                    colors: [Color.white.opacity(0.3), Color.cyan.opacity(0.2)],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
-                            .frame(height: 20)
-                            .animation(.easeInOut(duration: 2.0).repeatForever(), value: UUID())
-                        Spacer()
-                    }
-                )
-                .animation(.spring(duration: 0.8, bounce: 0.2), value: waterLevel)
-        }
-        .ignoresSafeArea()
-    }
-}
-
-struct ModernWaveShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        
-        let waveHeight: CGFloat = 12
-        let waveLength = rect.width / 4
-        
-        path.move(to: CGPoint(x: 0, y: rect.midY))
-        
-        for i in stride(from: 0, through: rect.width, by: 2) {
-            let relativeX = i / waveLength
-            let sine = sin(relativeX * .pi * 2)
-            let cosine = cos(relativeX * .pi * 1.3)
-            let y = rect.midY + (sine + cosine * 0.3) * waveHeight
-            path.addLine(to: CGPoint(x: i, y: y))
-        }
-        
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: 0, y: rect.maxY))
-        path.closeSubpath()
-        
-        return path
     }
 }

@@ -8,9 +8,14 @@ struct GameView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // Background
-                GameConstants.backgroundGradient
-                    .ignoresSafeArea()
+                // Enhanced background
+                ZStack {
+                    GameConstants.backgroundGradient
+                    
+                    // Animated bubbles in background
+                    BackgroundBubbles()
+                }
+                .ignoresSafeArea()
                 
                 // Water fill effect
                 WaterFillView(waterLevel: gameManager.waterLevel, geometry: geometry)
@@ -20,6 +25,10 @@ struct GameView: View {
                     GameHeaderView()
                         .environmentObject(gameState)
                         .environmentObject(gameManager)
+                        .background(
+                            .ultraThinMaterial
+                                .opacity(0.3)
+                        )
                     
                     // Game stats
                     GameStatsView()
@@ -55,11 +64,14 @@ struct GameView: View {
         
         switch result {
         case .completed:
+            print("🎮 Game completed for level \(gameState.selectedLevel)")
+            // Complete level immediately for unlock logic
             gameState.completeLevel(gameState.selectedLevel)
-            gameState.goHome()
+            // Don't go home yet - let the overlay handle it
         case .failed:
+            print("💔 Game failed for level \(gameState.selectedLevel)")
             gameState.failLevel(gameState.selectedLevel)
-            gameState.goHome()
+            // Don't go home yet - let the overlay handle it
         }
     }
 }
@@ -160,19 +172,31 @@ struct GameStatsView: View {
 struct ScoreSection: View {
     let score: Int
     let pointsNeeded: Int
+    @State private var displayScore: Int = 0
     
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("\(score)/\(pointsNeeded)")
+            Text("\(displayScore)/\(pointsNeeded)")
                 .font(.system(size: 24, weight: .black, design: .rounded))
                 .foregroundStyle(
                     LinearGradient(colors: [.white, .cyan.opacity(0.8)], startPoint: .top, endPoint: .bottom)
                 )
+                .contentTransition(.numericText())
             
-            ProgressView(value: Double(min(score, pointsNeeded)), total: Double(pointsNeeded))
-                .progressViewStyle(LinearProgressViewStyle(tint: .cyan))
+            ProgressView(value: Double(min(displayScore, pointsNeeded)), total: Double(pointsNeeded))
+                .progressViewStyle(.linear)
+                .tint(.cyan)
                 .scaleEffect(y: 3)
                 .frame(width: 120)
+                .animation(.spring(response: 0.5, dampingFraction: 0.8), value: displayScore)
+        }
+        .onChange(of: score) { _, newValue in
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                displayScore = newValue
+            }
+        }
+        .onAppear {
+            displayScore = score
         }
     }
 }
@@ -204,6 +228,7 @@ struct TimerSection: View {
 // MARK: - GameAreaView.swift
 struct GameAreaView: View {
     @EnvironmentObject var gameManager: GameManager
+    @State private var shakeOffset: CGFloat = 0
     
     var body: some View {
         ZStack {
@@ -214,41 +239,31 @@ struct GameAreaView: View {
                 }
             }
             
-            // Pop effects
-            if gameManager.showPopAnimation {
-                PopEffectsView()
+            // Water burst effects
+            ForEach(gameManager.popEffects) { effect in
+                WaterBurstView(position: effect.position, color: effect.color)
+                    .allowsHitTesting(false)
+                    .onAppear {
+                        if !effect.isPositive {
+                            shakeScreen()
+                        }
+                    }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .offset(x: shakeOffset)
     }
-}
-
-struct PopEffectsView: View {
-    var body: some View {
-        ForEach(0..<12, id: \.self) { i in
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [.cyan, .blue, .clear],
-                        center: .center,
-                        startRadius: 1,
-                        endRadius: 15
-                    )
-                )
-                .frame(width: 8, height: 8)
-                .offset(
-                    x: Double.random(in: -80...80),
-                    y: Double.random(in: -80...80)
-                )
-                .opacity(0)
-                .scaleEffect(2.0)
-                .animation(
-                    .easeOut(duration: GameConstants.popAnimationDuration).delay(Double(i) * 0.05),
-                    value: UUID()
-                )
+    
+    private func shakeScreen() {
+        withAnimation(.easeInOut(duration: 0.1).repeatCount(3, autoreverses: true)) {
+            shakeOffset = 5
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            shakeOffset = 0
         }
     }
 }
+
 
 // MARK: - GameControlsView.swift
 struct GameControlsView: View {
