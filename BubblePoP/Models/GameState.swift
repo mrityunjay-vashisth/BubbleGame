@@ -1,5 +1,53 @@
 // MARK: - GameState.swift
 import Foundation
+import SwiftUI
+
+// MARK: - Persistence Manager
+class GameStatePersistence {
+    private static let unlockedLevelsKey = "UnlockedLevels"
+    private static let completedLevelsKey = "CompletedLevels"
+    private static let levelFailuresKey = "LevelFailures"
+    private static let selectedLevelKey = "SelectedLevel"
+    
+    static func save(gameState: GameState) {
+        let defaults = UserDefaults.standard
+        
+        // Save as arrays for UserDefaults compatibility
+        defaults.set(Array(gameState.unlockedLevels), forKey: unlockedLevelsKey)
+        defaults.set(Array(gameState.completedLevels), forKey: completedLevelsKey)
+        
+        // Convert [Int: Int] dictionary to [String: Int] for UserDefaults compatibility
+        let levelFailuresForStorage = gameState.levelFailures.reduce(into: [String: Int]()) { result, pair in
+            result[String(pair.key)] = pair.value
+        }
+        defaults.set(levelFailuresForStorage, forKey: levelFailuresKey)
+        defaults.set(gameState.selectedLevel, forKey: selectedLevelKey)
+    }
+    
+    static func load() -> (unlockedLevels: Set<Int>, completedLevels: Set<Int>, levelFailures: [Int: Int], selectedLevel: Int) {
+        let defaults = UserDefaults.standard
+        
+        let unlockedArray = defaults.array(forKey: unlockedLevelsKey) as? [Int] ?? [1]
+        let completedArray = defaults.array(forKey: completedLevelsKey) as? [Int] ?? []
+        
+        // Convert [String: Int] back to [Int: Int]
+        let storedFailures = defaults.dictionary(forKey: levelFailuresKey) as? [String: Int] ?? [:]
+        let failures = storedFailures.reduce(into: [Int: Int]()) { result, pair in
+            if let key = Int(pair.key) {
+                result[key] = pair.value
+            }
+        }
+        
+        let selected = defaults.integer(forKey: selectedLevelKey)
+        
+        return (
+            unlockedLevels: Set(unlockedArray),
+            completedLevels: Set(completedArray),
+            levelFailures: failures,
+            selectedLevel: selected > 0 ? selected : 1
+        )
+    }
+}
 
 enum GameScreen {
     case home
@@ -12,6 +60,10 @@ class GameState: ObservableObject {
     @Published var completedLevels: Set<Int> = []
     @Published var levelFailures: [Int: Int] = [:]
     @Published var selectedLevel = 1
+    
+    init() {
+        loadGameState()
+    }
     
     var highestUnlockedLevel: Int {
         unlockedLevels.max() ?? 1
@@ -32,6 +84,9 @@ class GameState: ObservableObject {
             // Force UI update by recreating the set
             self.unlockedLevels = Set(self.unlockedLevels)
             self.completedLevels = Set(self.completedLevels)
+            
+            // Save progress
+            self.saveGameState()
         }
     }
     
@@ -53,15 +108,36 @@ class GameState: ObservableObject {
                 selectedLevel = unlockedLevels.max() ?? 1
             }
         }
+        
+        // Save progress
+        saveGameState()
     }
     
     func selectLevel(_ level: Int) {
         guard unlockedLevels.contains(level) else { return }
         selectedLevel = level
-        currentScreen = .game
+        withAnimation(.easeInOut(duration: 0.4)) {
+            currentScreen = .game
+        }
+        saveGameState() // Save selected level
     }
     
     func goHome() {
-        currentScreen = .home
+        withAnimation(.easeInOut(duration: 0.3)) {
+            currentScreen = .home
+        }
+    }
+    
+    // MARK: - Persistence Methods
+    private func saveGameState() {
+        GameStatePersistence.save(gameState: self)
+    }
+    
+    private func loadGameState() {
+        let saved = GameStatePersistence.load()
+        self.unlockedLevels = saved.unlockedLevels
+        self.completedLevels = saved.completedLevels
+        self.levelFailures = saved.levelFailures
+        self.selectedLevel = saved.selectedLevel
     }
 }

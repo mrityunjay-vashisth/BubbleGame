@@ -1,5 +1,84 @@
 // MARK: - GameConstants.swift
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
+
+// MARK: - Performance Detection
+struct PerformanceDetector {
+    static let shared = PerformanceDetector()
+    
+    private let isHighPerformanceDevice: Bool
+    private let isLowMemoryDevice: Bool
+    
+    private init() {
+        #if os(iOS)
+        let deviceModel = UIDevice.current.model
+        let systemVersion = Float(UIDevice.current.systemVersion) ?? 0.0
+        
+        // Detect iPhone 12, 13, 14, 15 and newer as high performance
+        // Older devices or devices with less than iOS 14 are considered lower performance
+        isHighPerformanceDevice = systemVersion >= 14.0 && 
+            (deviceModel.contains("iPhone") && !deviceModel.contains("SE"))
+        
+        isLowMemoryDevice = ProcessInfo.processInfo.physicalMemory < 3_000_000_000 // Less than 3GB RAM
+        #else
+        isHighPerformanceDevice = true
+        isLowMemoryDevice = false
+        #endif
+    }
+    
+    // Performance-based settings
+    var maxConcurrentBalloons: Int {
+        return isHighPerformanceDevice ? 12 : 8
+    }
+    
+    var maxConcurrentEffects: Int {
+        return isHighPerformanceDevice ? 10 : 6
+    }
+    
+    var backgroundBubbleCount: Int {
+        return isHighPerformanceDevice ? 6 : 3
+    }
+    
+    var timerInterval: TimeInterval {
+        return isHighPerformanceDevice ? 0.033 : 0.050  // 30fps vs 20fps
+    }
+    
+    var enableComplexAnimations: Bool {
+        return isHighPerformanceDevice && !isLowMemoryDevice
+    }
+    
+    var animationDurationMultiplier: Double {
+        return isHighPerformanceDevice ? 1.0 : 1.3  // Slower animations on older devices
+    }
+    
+    var enableViewRecycling: Bool {
+        // Enable view recycling on lower-end devices to reduce allocation overhead
+        return !isHighPerformanceDevice || isLowMemoryDevice
+    }
+    
+    // Metal framework support detection
+    var supportsMetalEffects: Bool {
+        #if targetEnvironment(simulator)
+        return false // Simulators often have Metal issues
+        #else
+        return isHighPerformanceDevice && !isLowMemoryDevice
+        #endif
+    }
+    
+    var enableBlurEffects: Bool {
+        return supportsMetalEffects
+    }
+    
+    var enableShadowEffects: Bool {
+        return supportsMetalEffects
+    }
+    
+    var enableAdvancedMaterials: Bool {
+        return supportsMetalEffects
+    }
+}
 
 struct GameConstants {
     static let maxLevels = 50
@@ -10,10 +89,10 @@ struct GameConstants {
     static let balloonSize = CGSize(width: 70, height: 85)  // Made bigger: was 60x75, now 70x85
     static let levelGridColumns = 4
     
-    // Animation Durations
-    static let popAnimationDuration: Double = 1.5
-    static let levelUpAnimationDuration: Double = 0.6
-    static let balloonSpawnDuration: Double = 0.4
+    // Performance-adjusted Animation Durations
+    static let popAnimationDuration: Double = 1.0 * PerformanceDetector.shared.animationDurationMultiplier
+    static let levelUpAnimationDuration: Double = 0.6 * PerformanceDetector.shared.animationDurationMultiplier
+    static let balloonSpawnDuration: Double = 0.4 * PerformanceDetector.shared.animationDurationMultiplier
     
     // Modern Design System
     static let cornerRadius: CGFloat = 20
@@ -59,11 +138,31 @@ struct GameConstants {
         static let divider = Color(red: 0.96, green: 0.95, blue: 0.93)
     }
     
-    // Spawn Areas - Use full vertical space for better distribution
+    // Spawn Areas - Keep balloons in the center playable area
+    // These are safe defaults - actual spawn area should be calculated based on screen size
     static let balloonSpawnArea = (
-        x: 60.0...340.0,    // Safe horizontal margins
-        y: 180.0...520.0    // Expanded: from stats area to just above controls
+        x: 30.0...370.0,    // Horizontal range with safe margins
+        y: 230.0...470.0    // Vertical range avoiding UI elements (header + stats + controls)
     )
+    
+    // Dynamic spawn area calculation based on screen size
+    static func getSpawnArea(screenWidth: CGFloat, screenHeight: CGFloat) -> (x: ClosedRange<Double>, y: ClosedRange<Double>) {
+        let headerHeight: CGFloat = 80   // Back button and level indicator
+        let statsHeight: CGFloat = 120   // Score and timer stats board
+        let controlsHeight: CGFloat = 180  // Controls + padding
+        let horizontalMargin: CGFloat = 30
+        let verticalPadding: CGFloat = 30  // Extra padding around UI elements
+        
+        let minX = horizontalMargin
+        let maxX = screenWidth - horizontalMargin
+        let minY = headerHeight + statsHeight + verticalPadding  // Clear both header AND stats
+        let maxY = screenHeight - controlsHeight - verticalPadding  // Clear controls
+        
+        return (
+            x: Double(minX)...Double(maxX),
+            y: Double(minY)...Double(maxY)
+        )
+    }
     
     // Warm & Inviting Gradients
     static let backgroundGradient = LinearGradient(

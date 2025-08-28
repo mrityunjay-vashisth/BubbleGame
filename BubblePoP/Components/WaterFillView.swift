@@ -83,7 +83,6 @@ struct WaveShape: Shape {
         
         for x in stride(from: 0, through: rect.width, by: 1) {
             let relativeX = x / rect.width
-            let wavelength = rect.width / frequency
             let angle = relativeX * frequency * 2 * .pi + startAngle
             let y = yOffset + sin(angle) * waveHeight
             path.addLine(to: CGPoint(x: x, y: y))

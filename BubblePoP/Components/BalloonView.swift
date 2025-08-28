@@ -5,20 +5,24 @@ struct BalloonView: View {
     let balloon: GameBalloon
     let onTap: () -> Void
     
-    @State private var floatOffset: Double = 0
-    @State private var rotationAngle: Double = 0
+    @State private var combinedOffset: CGSize = .zero  // Combined float and rotation into single animation
     @State private var scale: Double = 0.1
-    @State private var waterWobble: Double = 0
+    @State private var animationPhase: Double = 0  // Single animation driver
     
-    // Dynamic sizing based on points
+    // Pre-computed sizing for better performance
     private var sizeMultiplier: Double {
-        let absPoints = Double(balloon.points) // points is already absolute value
-        // EXTREME scaling to make size differences impossible to miss
-        // 1 point = 0.5x (tiny), 2 points = 0.7x (small), 5 points = 1.3x (big), 10 points = 2.3x (huge!)
-        let multiplier = 0.3 + (absPoints * 0.2) // VERY aggressive scaling
-        return max(0.4, multiplier)
+        // Use lookup table for common point values to avoid repeated calculations
+        switch balloon.points {
+        case 1: return 0.5
+        case 2: return 0.7
+        case 3: return 0.9
+        case 4: return 1.1
+        case 5: return 1.3
+        default: return max(0.4, 0.3 + (Double(balloon.points) * 0.2))
+        }
     }
     
+    // Cache computed values to avoid repeated calculations
     private var balloonWidth: Double {
         GameConstants.balloonSize.width * sizeMultiplier
     }
@@ -35,7 +39,6 @@ struct BalloonView: View {
             // Main balloon with water effect
             BalloonBody(
                 balloon: balloon,
-                wobble: waterWobble,
                 width: balloonWidth,
                 height: balloonHeight
             )
@@ -58,8 +61,8 @@ struct BalloonView: View {
                 )
         )
         .position(x: balloon.x, y: balloon.y)
-        .offset(y: floatOffset)
-        .rotationEffect(.degrees(rotationAngle))
+        .offset(combinedOffset)
+        .rotationEffect(.degrees(animationPhase * 2))  // Rotation from single animation
         .scaleEffect(scale)
         .onTapGesture {
             onTap()
@@ -70,34 +73,33 @@ struct BalloonView: View {
     }
     
     private func setupAnimations() {
-        // Spawn animation
-        withAnimation(.spring(duration: GameConstants.balloonSpawnDuration, bounce: 0.4)) {
+        // Simplified spawn animation to prevent hangs
+        withAnimation(.linear(duration: 0.15)) {
             scale = 1.0
         }
         
-        // Float animation (larger balloons float less)
-        let floatRange = 15.0 / sizeMultiplier
-        floatOffset = Double.random(in: -floatRange...floatRange)
-        
-        // Rotation animation (larger balloons rotate less)
-        let rotationRange = 20.0 / sizeMultiplier
-        rotationAngle = Double.random(in: -rotationRange...rotationRange)
-        
-        // Start float cycle (slower for bigger balloons)
-        let floatDuration = 2.0 + (sizeMultiplier * 1.5)
-        withAnimation(.easeInOut(duration: floatDuration).repeatForever(autoreverses: true)) {
-            floatOffset = -floatOffset
+        // Only animate if performance allows it
+        guard PerformanceDetector.shared.enableComplexAnimations else {
+            return  // Skip animations on lower performance devices
         }
         
-        // Start rotation cycle
-        let rotationDuration = 4.0 + (sizeMultiplier * 2.0)
-        withAnimation(.easeInOut(duration: rotationDuration).repeatForever(autoreverses: true)) {
-            rotationAngle = -rotationAngle
-        }
+        // Single combined animation for floating and rotation
+        let floatRange = 8.0 / sizeMultiplier  // Further reduced range
+        let initialOffset = CGSize(
+            width: Double.random(in: -3...3),
+            height: Double.random(in: -floatRange...floatRange)
+        )
         
-        // Water wobble animation
-        withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
-            waterWobble = 5 / sizeMultiplier
+        combinedOffset = initialOffset
+        
+        // Simplified animation cycle with reduced complexity
+        let animationDuration = 4.0 + (sizeMultiplier * 0.5)  // Longer, smoother
+        withAnimation(.linear(duration: animationDuration).repeatForever(autoreverses: true)) {
+            combinedOffset = CGSize(
+                width: -initialOffset.width,
+                height: -initialOffset.height
+            )
+            animationPhase = 5.0 / sizeMultiplier  // Reduced rotation
         }
     }
 }
@@ -111,15 +113,15 @@ struct BalloonShadow: View {
             .fill(Color.black.opacity(0.2))
             .frame(width: width, height: height)
             .offset(x: 3, y: 5)
-            .blur(radius: 4)
+            .performanceAwareBlur(radius: 4)
     }
 }
 
 struct BalloonBody: View {
     let balloon: GameBalloon
-    let wobble: Double
     let width: Double
     let height: Double
+    @State private var waterWobble: Double = 0
     
     var body: some View {
         ZStack {
@@ -141,7 +143,7 @@ struct BalloonBody: View {
                     )
                 )
                 .frame(width: width - 10, height: height - 10)
-                .offset(y: wobble)
+                .offset(y: waterWobble)
                 .mask(
                     Ellipse()
                         .frame(width: width, height: height)
@@ -161,6 +163,12 @@ struct BalloonBody: View {
             
             // Highlight (scales with balloon)
             highlight
+        }
+        .onAppear {
+            // Simple water wobble effect
+            withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+                waterWobble = 3.0
+            }
         }
     }
     
@@ -246,7 +254,7 @@ struct PointsDisplay: View {
             Text(balloon.isPositive ? "+\(balloon.points)" : "-\(balloon.points)")
                 .font(.system(size: fontSize, weight: .black, design: .rounded))
                 .foregroundStyle(pointsGradient)
-                .shadow(color: .black.opacity(0.9), radius: 2)
+                .performanceAwareShadow(color: .black.opacity(0.9), radius: 2)
         }
     }
     

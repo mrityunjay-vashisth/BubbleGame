@@ -4,11 +4,13 @@ import SwiftUI
 struct GameView: View {
     @EnvironmentObject var gameState: GameState
     @StateObject private var gameManager = GameManager()
+    @State private var lowMemoryMode = false
+    @State private var lastGameResult: GameResult? = nil
     
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // Enhanced background
+                // Layer 1: Background (furthest back)
                 ZStack {
                     GameConstants.backgroundGradient
                     
@@ -16,45 +18,63 @@ struct GameView: View {
                     BackgroundBubbles()
                 }
                 .ignoresSafeArea()
+                .zIndex(0)
                 
-                // Water fill effect
+                // Layer 2: Water fill effect
                 WaterFillView(waterLevel: gameManager.waterLevel, geometry: geometry)
+                    .zIndex(1)
                 
+                // Layer 3: Game play area (balloons spawn here)
+                GameAreaView()
+                    .environmentObject(gameManager)
+                    .zIndex(2)
+                
+                // Layer 4: UI Controls (always on top)
                 VStack(spacing: 0) {
                     // Header
                     GameHeaderView()
                         .environmentObject(gameState)
                         .environmentObject(gameManager)
-                        .background(
-                            .ultraThinMaterial
-                                .opacity(0.3)
-                        )
+                        .performanceAwareUltraThinMaterial(fallback: Color.white.opacity(0.1))
                     
                     // Game stats
                     GameStatsView()
                         .environmentObject(gameState)
                         .environmentObject(gameManager)
                     
-                    // Game area
-                    GameAreaView()
-                        .environmentObject(gameManager)
+                    Spacer() // Push controls to bottom
                     
                     // Controls
                     GameControlsView()
                         .environmentObject(gameState)
                         .environmentObject(gameManager)
                 }
+                .zIndex(3)
                 
-                // Overlays
+                // Layer 5: Overlays (highest priority)
                 GameOverlaysView()
                     .environmentObject(gameState)
                     .environmentObject(gameManager)
+                    .zIndex(4)
+                
+                // Debug spawn area (development only)
+                SpawnAreaDebugView(
+                    screenSize: geometry.size,
+                    showBounds: GameConstants.showSpawnAreaBounds
+                )
+                .zIndex(5)
+            }
+            .onAppear {
+                // Use geometry size from GeometryReader context
+                let screenSize = geometry.size
+                gameManager.setupGame(level: gameState.selectedLevel, screenSize: screenSize)
+                setupMemoryWarningHandling()
             }
         }
-        .onAppear {
-            gameManager.setupGame(level: gameState.selectedLevel)
-        }
         .onChange(of: gameManager.gameResult) { _, result in
+            // Prevent handling the same result multiple times per frame
+            guard result != lastGameResult else { return }
+            lastGameResult = result
             handleGameResult(result)
         }
     }
@@ -70,6 +90,34 @@ struct GameView: View {
         case .failed:
             gameState.failLevel(gameState.selectedLevel)
             // Don't go home yet - let the overlay handle it
+        }
+    }
+    
+    private func setupMemoryWarningHandling() {
+        #if os(iOS)
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            handleMemoryWarning()
+        }
+        #endif
+    }
+    
+    private func handleMemoryWarning() {
+        // Enable low memory mode
+        lowMemoryMode = true
+        
+        // Force cleanup in game manager
+        if gameManager.gameActive {
+            // Reduce visual effects temporarily
+            gameManager.popEffects.removeAll()
+        }
+        
+        // Reset low memory mode after 10 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
+            lowMemoryMode = false
         }
     }
 }
@@ -197,6 +245,7 @@ struct FuturisticScoreDisplay: View {
     @Binding var pulseAnimation: Bool
     @State private var displayScore: Int = 0
     @State private var progressAnimation = false
+    @State private var updateTask: Task<Void, Never>?
     
     private var progress: Double {
         Double(min(displayScore, pointsNeeded)) / Double(pointsNeeded)
@@ -271,12 +320,28 @@ struct FuturisticScoreDisplay: View {
             .frame(width: 150, height: 8)
         }
         .onChange(of: score) { _, newValue in
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
-                displayScore = newValue
-                progressAnimation = true
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                progressAnimation = false
+            // Cancel any pending update to prevent multiple updates per frame
+            updateTask?.cancel()
+            
+            updateTask = Task { @MainActor in
+                // Small delay to batch rapid score changes
+                do {
+                    try await Task.sleep(for: .milliseconds(16)) // ~1 frame at 60fps
+                    
+                    guard !Task.isCancelled else { return }
+                    
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                        displayScore = newValue
+                        progressAnimation = true
+                    }
+                    
+                    try await Task.sleep(for: .milliseconds(200))
+                    guard !Task.isCancelled else { return }
+                    
+                    progressAnimation = false
+                } catch {
+                    // Task was cancelled, which is fine
+                }
             }
         }
         .onAppear {
@@ -291,6 +356,7 @@ struct FuturisticTimerDisplay: View {
     let isComplete: Bool
     @State private var timerPulse = false
     @State private var criticalTime = false
+    @State private var lastTimeUpdate: Int = -1
     
     var body: some View {
         VStack(alignment: .trailing, spacing: 8) {
@@ -366,6 +432,10 @@ struct FuturisticTimerDisplay: View {
             }
         }
         .onChange(of: timeRemaining) { _, newValue in
+            // Only update if time actually changed to prevent multiple updates per frame
+            guard newValue != lastTimeUpdate else { return }
+            lastTimeUpdate = newValue
+            
             if newValue <= 10 && !criticalTime {
                 withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) {
                     criticalTime = true
