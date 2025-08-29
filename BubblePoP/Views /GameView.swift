@@ -35,7 +35,7 @@ struct GameView: View {
                     GameHeaderView()
                         .environmentObject(gameState)
                         .environmentObject(gameManager)
-                        .performanceAwareUltraThinMaterial(fallback: Color.white.opacity(0.1))
+                        .background(.ultraThinMaterial.opacity(0.8))
                     
                     // Game stats
                     GameStatsView()
@@ -245,7 +245,6 @@ struct FuturisticScoreDisplay: View {
     @Binding var pulseAnimation: Bool
     @State private var displayScore: Int = 0
     @State private var progressAnimation = false
-    @State private var updateTask: Task<Void, Never>?
     
     private var progress: Double {
         Double(min(displayScore, pointsNeeded)) / Double(pointsNeeded)
@@ -320,28 +319,15 @@ struct FuturisticScoreDisplay: View {
             .frame(width: 150, height: 8)
         }
         .onChange(of: score) { _, newValue in
-            // Cancel any pending update to prevent multiple updates per frame
-            updateTask?.cancel()
+            // Instant, responsive score updates
+            withAnimation(.easeOut(duration: 0.15)) {
+                displayScore = newValue
+                progressAnimation = true
+            }
             
-            updateTask = Task { @MainActor in
-                // Small delay to batch rapid score changes
-                do {
-                    try await Task.sleep(for: .milliseconds(16)) // ~1 frame at 60fps
-                    
-                    guard !Task.isCancelled else { return }
-                    
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
-                        displayScore = newValue
-                        progressAnimation = true
-                    }
-                    
-                    try await Task.sleep(for: .milliseconds(200))
-                    guard !Task.isCancelled else { return }
-                    
-                    progressAnimation = false
-                } catch {
-                    // Task was cancelled, which is fine
-                }
+            // Quick pulse reset
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                progressAnimation = false
             }
         }
         .onAppear {

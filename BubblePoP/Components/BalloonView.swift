@@ -5,9 +5,8 @@ struct BalloonView: View {
     let balloon: GameBalloon
     let onTap: () -> Void
     
-    @State private var combinedOffset: CGSize = .zero  // Combined float and rotation into single animation
     @State private var scale: Double = 0.1
-    @State private var animationPhase: Double = 0  // Single animation driver
+    @State private var floatOffset: Double = 0
     
     // Pre-computed sizing for better performance
     private var sizeMultiplier: Double {
@@ -60,9 +59,7 @@ struct BalloonView: View {
                     height: balloonHeight * 1.3
                 )
         )
-        .position(x: balloon.x, y: balloon.y)
-        .offset(combinedOffset)
-        .rotationEffect(.degrees(animationPhase * 2))  // Rotation from single animation
+        .position(x: balloon.x, y: balloon.y + floatOffset)
         .scaleEffect(scale)
         .onTapGesture {
             onTap()
@@ -73,33 +70,14 @@ struct BalloonView: View {
     }
     
     private func setupAnimations() {
-        // Simplified spawn animation to prevent hangs
-        withAnimation(.linear(duration: 0.15)) {
+        // Quick, snappy spawn animation
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
             scale = 1.0
         }
         
-        // Only animate if performance allows it
-        guard PerformanceDetector.shared.enableComplexAnimations else {
-            return  // Skip animations on lower performance devices
-        }
-        
-        // Single combined animation for floating and rotation
-        let floatRange = 8.0 / sizeMultiplier  // Further reduced range
-        let initialOffset = CGSize(
-            width: Double.random(in: -3...3),
-            height: Double.random(in: -floatRange...floatRange)
-        )
-        
-        combinedOffset = initialOffset
-        
-        // Simplified animation cycle with reduced complexity
-        let animationDuration = 4.0 + (sizeMultiplier * 0.5)  // Longer, smoother
-        withAnimation(.linear(duration: animationDuration).repeatForever(autoreverses: true)) {
-            combinedOffset = CGSize(
-                width: -initialOffset.width,
-                height: -initialOffset.height
-            )
-            animationPhase = 5.0 / sizeMultiplier  // Reduced rotation
+        // Simple floating animation - no complex math
+        withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+            floatOffset = Double.random(in: -5...5)
         }
     }
 }
@@ -113,7 +91,7 @@ struct BalloonShadow: View {
             .fill(Color.black.opacity(0.2))
             .frame(width: width, height: height)
             .offset(x: 3, y: 5)
-            .performanceAwareBlur(radius: 4)
+            .blur(radius: 2)
     }
 }
 
@@ -254,7 +232,7 @@ struct PointsDisplay: View {
             Text(balloon.isPositive ? "+\(balloon.points)" : "-\(balloon.points)")
                 .font(.system(size: fontSize, weight: .black, design: .rounded))
                 .foregroundStyle(pointsGradient)
-                .performanceAwareShadow(color: .black.opacity(0.9), radius: 2)
+                .shadow(color: .black.opacity(0.5), radius: 1)
         }
     }
     

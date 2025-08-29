@@ -116,16 +116,12 @@ class GameState: ObservableObject {
     func selectLevel(_ level: Int) {
         guard unlockedLevels.contains(level) else { return }
         selectedLevel = level
-        withAnimation(.easeInOut(duration: 0.4)) {
-            currentScreen = .game
-        }
+        currentScreen = .game
         saveGameState() // Save selected level
     }
     
     func goHome() {
-        withAnimation(.easeInOut(duration: 0.3)) {
-            currentScreen = .home
-        }
+        currentScreen = .home
     }
     
     // MARK: - Persistence Methods

@@ -35,7 +35,7 @@ struct LevelCompleteOverlay: View {
             // Background blur
             Color.black.opacity(0.4)
                 .ignoresSafeArea()
-                .performanceAwareBlur(radius: 5)
+                .blur(radius: 3)
             
             // Confetti
             if showConfetti {
@@ -124,7 +124,7 @@ struct LevelFailedOverlay: View {
         ZStack {
             Color.black.opacity(0.4)
                 .ignoresSafeArea()
-                .performanceAwareBlur(radius: 5)
+                .blur(radius: 3)
             
             VStack(spacing: 20) {
                 Image(systemName: "xmark.circle.fill")

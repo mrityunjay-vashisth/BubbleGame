@@ -10,24 +10,18 @@ struct ContentView: View {
             GameConstants.backgroundGradient
                 .ignoresSafeArea()
             
-            // Smooth Screen Transitions
+            // Fast, clean screen transitions
             switch gameState.currentScreen {
             case .home:
                 HomeScreenView()
                     .environmentObject(gameState)
-                    .transition(.asymmetric(
-                        insertion: .move(edge: .leading).combined(with: .opacity),
-                        removal: .move(edge: .trailing).combined(with: .opacity)
-                    ))
+                    .transition(.opacity)
             case .game:
                 GameView()
                     .environmentObject(gameState)
-                    .transition(.asymmetric(
-                        insertion: .move(edge: .trailing).combined(with: .opacity),
-                        removal: .move(edge: .leading).combined(with: .opacity)
-                    ))
+                    .transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 0.4), value: gameState.currentScreen)
+        .animation(.easeInOut(duration: 0.2), value: gameState.currentScreen)
     }
 }

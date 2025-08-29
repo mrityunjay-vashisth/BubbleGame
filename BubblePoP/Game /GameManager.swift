@@ -32,8 +32,7 @@ class GameManager: ObservableObject {
     @Published var failureMessage = ""
     @Published var gameResult: GameResult?
     
-    // View recycling
-    private var balloonPoolManager = BalloonPoolManager()
+    // Simple balloon management
     
     private var mainGameTimer: Timer?
     private var lastSpawnTime: Date = Date()
@@ -81,14 +80,6 @@ class GameManager: ObservableObject {
     func stopGame() {
         gameActive = false
         mainGameTimer?.invalidate()
-        
-        // Reset pool if using view recycling
-        if PerformanceDetector.shared.enableViewRecycling {
-            DispatchQueue.main.async { [weak self] in
-                self?.balloonPoolManager.reset()
-            }
-        }
-        
         balloons = []
         popEffects.removeAll() // Clear effects when stopping
     }
@@ -103,16 +94,8 @@ class GameManager: ObservableObject {
         updateWaterLevel()
         triggerPopAnimation(at: CGPoint(x: balloon.x, y: balloon.y), color: balloon.color, isPositive: balloon.isPositive)
         
-        // Use pool removal if available
-        if PerformanceDetector.shared.enableViewRecycling {
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
-                self.balloonPoolManager.popBalloon(balloon)
-                self.balloons = self.balloonPoolManager.visibleBalloons
-            }
-        } else {
-            removeBalloon(balloon)
-        }
+        // Simple balloon removal
+        removeBalloon(balloon)
         
         #if os(iOS)
         let impactFeedback = UIImpactFeedbackGenerator(style: balloon.isPositive ? .light : .medium)
@@ -135,8 +118,8 @@ class GameManager: ObservableObject {
         lastSpawnTime = Date()
         lastSecondUpdate = Int(Date().timeIntervalSince1970)
         
-        // Performance-adjusted timer interval
-        mainGameTimer = Timer.scheduledTimer(withTimeInterval: PerformanceDetector.shared.timerInterval, repeats: true) { _ in
+        // Fixed 60fps timer for smooth gameplay
+        mainGameTimer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { _ in
             self.updateGame()
         }
     }
@@ -148,28 +131,17 @@ class GameManager: ObservableObject {
         let now = Date()
         let currentSecond = Int(now.timeIntervalSince1970)
         
-        // Update time once per second
+        // Update time once per second - simplified
         if currentSecond != lastSecondUpdate {
-            DispatchQueue.main.async { [weak self] in
-                self?.timeRemaining -= 1
-            }
+            timeRemaining -= 1
             lastSecondUpdate = currentSecond
             
-            // More aggressive cleanup every 3 seconds - move to background
-            if timeRemaining % 3 == 0 {
-                DispatchQueue.global(qos: .utility).async { [weak self] in
-                    self?.cleanupExpiredEffects()
-                }
+            // Simple cleanup every 5 seconds
+            if timeRemaining % 5 == 0 {
+                cleanupExpiredEffects()
             }
             
-            // Memory management - deep cleanup every 30 seconds of gameplay
-            if now.timeIntervalSince(lastMemoryCleanup) >= 30.0 {
-                DispatchQueue.global(qos: .utility).async { [weak self] in
-                    self?.performMemoryCleanup()
-                }
-                lastMemoryCleanup = now
-            }
-            
+            // Check win/lose condition
             if timeRemaining <= 0 {
                 if score >= LevelConfiguration.pointsNeeded(for: currentLevel) {
                     completeLevel()
@@ -190,39 +162,18 @@ class GameManager: ObservableObject {
     }
     
     private func cleanupExpiredEffects() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            
-            // Remove any effects that may have been missed by their cleanup timers
-            let oldCount = self.popEffects.count
-            if oldCount > self.maxPopEffects {
-                self.popEffects = Array(self.popEffects.suffix(self.maxPopEffects))
-            }
-            
-            // Clean up old spawn positions more aggressively
-            if self.recentSpawnPositions.count > 6 {
-                self.recentSpawnPositions = Array(self.recentSpawnPositions.suffix(6))
-            }
+        // Keep effect count reasonable
+        if popEffects.count > maxPopEffects {
+            popEffects = Array(popEffects.suffix(maxPopEffects))
+        }
+        
+        // Clean up old spawn positions
+        if recentSpawnPositions.count > 6 {
+            recentSpawnPositions = Array(recentSpawnPositions.suffix(6))
         }
     }
     
-    private func performMemoryCleanup() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            
-            // Force cleanup of all effects to prevent memory buildup
-            self.popEffects.removeAll()
-            
-            // Clean spawn positions
-            self.recentSpawnPositions.removeAll()
-            
-            // Re-shuffle precomputed positions to maintain randomness
-            if !self.precomputedPositions.isEmpty {
-                self.precomputedPositions.shuffle()
-                self.positionIndex = 0
-            }
-        }
-    }
+    // Removed - no longer needed with simplified approach
     
     private func precomputeSpawnPositions(screenSize: CGSize = CGSize(width: 393, height: 852)) {
         // Pre-calculate valid spawn positions to reduce runtime calculations
@@ -281,35 +232,8 @@ class GameManager: ObservableObject {
             negativeSpawned += balloon.points
         }
         
-        // Use balloon pool for recycling if performance mode allows
-        if PerformanceDetector.shared.enableViewRecycling {
-            // Try to use pooled balloon view
-            let lifetime = LevelConfiguration.balloonLifetime(for: currentLevel)
-            
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
-                if let _ = self.balloonPoolManager.addBalloon(
-                    x: balloon.x,
-                    y: balloon.y,
-                    isPositive: balloon.isPositive,
-                    points: balloon.points,
-                    colorIndex: balloon.colorIndex,
-                    lifetime: lifetime
-                ) {
-                    // Update balloons array to match pool
-                    self.balloons = self.balloonPoolManager.visibleBalloons
-                }
-            }
-            return
-        }
-        
-        // Fallback to regular balloon creation
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            withAnimation(.easeInOut(duration: 0.2)) {
-                self.balloons.append(balloon)
-            }
-        }
+        // Simple, direct balloon creation
+        balloons.append(balloon)
         
         // Schedule removal
         let lifetime = LevelConfiguration.balloonLifetime(for: currentLevel)
@@ -346,17 +270,10 @@ class GameManager: ObservableObject {
     }
     
     private func removeBalloon(_ balloon: GameBalloon) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            withAnimation(.linear(duration: 0.1)) {
-                self.balloons.removeAll { $0.id == balloon.id }
-            }
-        }
+        balloons.removeAll { $0.id == balloon.id }
         
-        // Clean up spawn positions that are no longer needed - on background thread
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            self?.cleanupOldSpawnPositions()
-        }
+        // Clean up spawn positions  
+        cleanupOldSpawnPositions()
     }
     
     private func cleanupOldSpawnPositions() {
@@ -406,12 +323,7 @@ class GameManager: ObservableObject {
         gameResult = nil
         mainGameTimer?.invalidate()
         
-        // Reset view pool
-        if PerformanceDetector.shared.enableViewRecycling {
-            DispatchQueue.main.async { [weak self] in
-                self?.balloonPoolManager.reset()
-            }
-        }
+        // Simple reset
         
         // Clear all effects to prevent memory leaks
         popEffects.removeAll()
