@@ -23,6 +23,7 @@ struct HomeScreenView: View {
                         FuturisticHeaderView(
                             completedCount: gameState.completedLevels.count,
                             unlockedCount: gameState.unlockedLevels.count,
+                            totalStars: gameState.levelStars.values.reduce(0, +),
                             pulseAnimation: $pulseAnimation
                         )
                         .padding(.top, 40)
@@ -134,6 +135,7 @@ struct FloatingOrbsView: View {
 struct FuturisticHeaderView: View {
     let completedCount: Int
     let unlockedCount: Int
+    let totalStars: Int
     @Binding var pulseAnimation: Bool
     @State private var rotationAngle: Double = 0
     
@@ -209,20 +211,48 @@ struct FuturisticHeaderView: View {
             .shadow(color: GameConstants.UI.accent.opacity(0.3), radius: 10, x: 0, y: 5)
             
             // Futuristic Stats Display
-            HStack(spacing: 30) {
-                StatsCapsule(
-                    value: completedCount,
-                    label: "MASTERED",
-                    color: GameConstants.UI.success,
-                    icon: "star.fill"
-                )
+            VStack(spacing: 15) {
+                HStack(spacing: 30) {
+                    StatsCapsule(
+                        value: completedCount,
+                        label: "MASTERED",
+                        color: GameConstants.UI.success,
+                        icon: "checkmark.circle.fill"
+                    )
+                    
+                    StatsCapsule(
+                        value: unlockedCount,
+                        label: "UNLOCKED",
+                        color: GameConstants.UI.accent,
+                        icon: "lock.open.fill"
+                    )
+                }
                 
-                StatsCapsule(
-                    value: unlockedCount,
-                    label: "UNLOCKED",
-                    color: GameConstants.UI.accent,
-                    icon: "lock.open.fill"
-                )
+                // Total Stars Display
+                if totalStars > 0 {
+                    HStack(spacing: 8) {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(.yellow)
+                        Text("\(totalStars) / \(completedCount * 3)")
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            .foregroundColor(GameConstants.UI.secondaryText)
+                        Text("STARS EARNED")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(GameConstants.UI.tertiaryText)
+                            .tracking(1)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(
+                        Capsule()
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                Capsule()
+                                    .stroke(Color.yellow.opacity(0.3), lineWidth: 1)
+                            )
+                    )
+                }
             }
         }
     }
@@ -314,6 +344,7 @@ struct FuturisticLevelCard: View {
     
     private var isUnlocked: Bool { gameState.unlockedLevels.contains(level) }
     private var isCompleted: Bool { gameState.completedLevels.contains(level) }
+    private var starCount: Int { gameState.getStarsForLevel(level) }
     
     var body: some View {
         Button(action: { 
@@ -348,54 +379,49 @@ struct FuturisticLevelCard: View {
                             )
                     )
                 
-                // Glow effect for completed levels
-                if isCompleted {
+                // Glow effect for 3-star levels
+                if starCount == 3 {
                     RoundedRectangle(cornerRadius: 20)
-                        .stroke(GameConstants.UI.warning, lineWidth: 2)
+                        .stroke(Color.yellow, lineWidth: 2)
                         .blur(radius: glowAnimation ? 8 : 4)
                         .opacity(glowAnimation ? 0.6 : 0.3)
                 }
                 
                 // Content
-                VStack(spacing: 8) {
+                VStack(spacing: 6) {
                     if isUnlocked {
-                        // Level number with futuristic style
-                        ZStack {
-                            Text("\(level)")
-                                .font(.system(size: 28, weight: .bold, design: .rounded))
-                                .foregroundStyle(
-                                    LinearGradient(
-                                        colors: textGradientColors,
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    )
+                        // Level number
+                        Text("\(level)")
+                            .font(.system(size: 26, weight: .bold, design: .rounded))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: textGradientColors,
+                                    startPoint: .top,
+                                    endPoint: .bottom
                                 )
-                            
-                            if isCompleted {
-                                Image(systemName: "checkmark.seal.fill")
-                                    .font(.system(size: 16))
-                                    .foregroundColor(GameConstants.UI.warning)
-                                    .offset(x: 20, y: -15)
+                            )
+                        
+                        // Star Rating Display
+                        if isCompleted {
+                            HStack(spacing: 2) {
+                                ForEach(1...3, id: \.self) { star in
+                                    Image(systemName: star <= starCount ? "star.fill" : "star")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(
+                                            star <= starCount ? starColor : Color.gray.opacity(0.3)
+                                        )
+                                }
+                            }
+                        } else {
+                            // Empty stars for unlocked but not played
+                            HStack(spacing: 2) {
+                                ForEach(1...3, id: \.self) { _ in
+                                    Image(systemName: "star")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(Color.gray.opacity(0.3))
+                                }
                             }
                         }
-                        
-                        // Progress indicator
-                        Capsule()
-                            .fill(GameConstants.UI.divider)
-                            .frame(width: 40, height: 3)
-                            .overlay(
-                                GeometryReader { geo in
-                                    Capsule()
-                                        .fill(
-                                            LinearGradient(
-                                                colors: [GameConstants.UI.accent, GameConstants.UI.warning],
-                                                startPoint: .leading,
-                                                endPoint: .trailing
-                                            )
-                                        )
-                                        .frame(width: isCompleted ? geo.size.width : geo.size.width * 0.3)
-                                }
-                            )
                     } else {
                         // Locked state
                         Image(systemName: "lock.fill")
@@ -462,6 +488,15 @@ struct FuturisticLevelCard: View {
             return GameConstants.cardShadow
         } else {
             return Color.clear
+        }
+    }
+    
+    private var starColor: Color {
+        switch starCount {
+        case 3: return Color.yellow
+        case 2: return Color.gray
+        case 1: return Color.brown.opacity(0.8)
+        default: return Color.gray.opacity(0.3)
         }
     }
 }

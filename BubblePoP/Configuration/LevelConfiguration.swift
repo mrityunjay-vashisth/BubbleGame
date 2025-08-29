@@ -63,4 +63,28 @@ struct LevelConfiguration {
     static func positiveBias(for level: Int) -> Double {
         max(0.5, 0.8 - (Double(level) * 0.05))
     }
+    
+    static func calculateOptimalBalloons(for level: Int) -> Int {
+        let pointsNeeded = pointsNeeded(for: level)
+        let maxPointsPerBalloon = level
+        let theoreticalMinimum = Int(ceil(Double(pointsNeeded) / Double(maxPointsPerBalloon)))
+        return theoreticalMinimum + Int(Double(theoreticalMinimum) * 0.2)
+    }
+    
+    static func getStarRating(balloonsPopped: Int, for level: Int) -> Int {
+        let optimal = calculateOptimalBalloons(for: level)
+        
+        if balloonsPopped <= optimal {
+            return 3
+        } else if balloonsPopped <= Int(Double(optimal) * 1.5) {
+            return 2
+        } else {
+            return 1
+        }
+    }
+    
+    static func getStarThresholds(for level: Int) -> (threeStars: Int, twoStars: Int) {
+        let optimal = calculateOptimalBalloons(for: level)
+        return (threeStars: optimal, twoStars: Int(Double(optimal) * 1.5))
+    }
 }

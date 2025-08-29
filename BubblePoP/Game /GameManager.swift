@@ -31,6 +31,8 @@ class GameManager: ObservableObject {
     @Published var showFailure = false
     @Published var failureMessage = ""
     @Published var gameResult: GameResult?
+    @Published var currentLevelStats = GameStatistics()
+    @Published var starRating: Int = 0
     
     // Simple balloon management
     
@@ -69,6 +71,8 @@ class GameManager: ObservableObject {
         levelComplete = false
         gameResult = nil
         recentSpawnPositions = [] // Clear spawn history
+        currentLevelStats = GameStatistics()
+        starRating = 0
         
         // Reset memory management timestamps
         sessionStartTime = Date()
@@ -87,9 +91,12 @@ class GameManager: ObservableObject {
     func popBalloon(_ balloon: GameBalloon) {
         if balloon.isPositive {
             score += balloon.points
+            currentLevelStats.positiveBalloonsPopped += 1
         } else {
             score = max(0, score - balloon.points)
+            currentLevelStats.negativeBalloonsPopped += 1
         }
+        currentLevelStats.totalBalloonsPopped += 1
         
         updateWaterLevel()
         triggerPopAnimation(at: CGPoint(x: balloon.x, y: balloon.y), color: balloon.color, isPositive: balloon.isPositive)
@@ -289,8 +296,13 @@ class GameManager: ObservableObject {
         balloons = []
         levelComplete = true
         waterLevel = 1.0
-        showLevelUp = true
         
+        // Calculate star rating
+        starRating = LevelConfiguration.getStarRating(balloonsPopped: currentLevelStats.totalBalloonsPopped, for: currentLevel)
+        currentLevelStats.starRating = starRating
+        currentLevelStats.calculateStarRating(for: currentLevel, pointsEarned: score)
+        
+        showLevelUp = true
         
         // Delay setting gameResult so overlay can show first
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -322,6 +334,8 @@ class GameManager: ObservableObject {
         failureMessage = ""
         gameResult = nil
         mainGameTimer?.invalidate()
+        currentLevelStats = GameStatistics()
+        starRating = 0
         
         // Simple reset
         

@@ -8,6 +8,7 @@ class GameStatePersistence {
     private static let completedLevelsKey = "CompletedLevels"
     private static let levelFailuresKey = "LevelFailures"
     private static let selectedLevelKey = "SelectedLevel"
+    private static let levelStarsKey = "LevelStars"
     
     static func save(gameState: GameState) {
         let defaults = UserDefaults.standard
@@ -22,9 +23,15 @@ class GameStatePersistence {
         }
         defaults.set(levelFailuresForStorage, forKey: levelFailuresKey)
         defaults.set(gameState.selectedLevel, forKey: selectedLevelKey)
+        
+        // Save star ratings
+        let levelStarsForStorage = gameState.levelStars.reduce(into: [String: Int]()) { result, pair in
+            result[String(pair.key)] = pair.value
+        }
+        defaults.set(levelStarsForStorage, forKey: levelStarsKey)
     }
     
-    static func load() -> (unlockedLevels: Set<Int>, completedLevels: Set<Int>, levelFailures: [Int: Int], selectedLevel: Int) {
+    static func load() -> (unlockedLevels: Set<Int>, completedLevels: Set<Int>, levelFailures: [Int: Int], selectedLevel: Int, levelStars: [Int: Int]) {
         let defaults = UserDefaults.standard
         
         let unlockedArray = defaults.array(forKey: unlockedLevelsKey) as? [Int] ?? [1]
@@ -38,13 +45,22 @@ class GameStatePersistence {
             }
         }
         
+        // Load star ratings
+        let storedStars = defaults.dictionary(forKey: levelStarsKey) as? [String: Int] ?? [:]
+        let stars = storedStars.reduce(into: [Int: Int]()) { result, pair in
+            if let key = Int(pair.key) {
+                result[key] = pair.value
+            }
+        }
+        
         let selected = defaults.integer(forKey: selectedLevelKey)
         
         return (
             unlockedLevels: Set(unlockedArray),
             completedLevels: Set(completedArray),
             levelFailures: failures,
-            selectedLevel: selected > 0 ? selected : 1
+            selectedLevel: selected > 0 ? selected : 1,
+            levelStars: stars
         )
     }
 }
@@ -60,6 +76,8 @@ class GameState: ObservableObject {
     @Published var completedLevels: Set<Int> = []
     @Published var levelFailures: [Int: Int] = [:]
     @Published var selectedLevel = 1
+    @Published var levelStars: [Int: Int] = [:]
+    @Published var levelStatistics = LevelStatistics()
     
     init() {
         loadGameState()
@@ -69,9 +87,20 @@ class GameState: ObservableObject {
         unlockedLevels.max() ?? 1
     }
     
-    func completeLevel(_ level: Int) {
+    func completeLevel(_ level: Int, stars: Int = 1, stats: GameStatistics? = nil) {
         DispatchQueue.main.async {
             self.completedLevels.insert(level)
+            
+            // Update star rating (keep best)
+            let currentStars = self.levelStars[level] ?? 0
+            if stars > currentStars {
+                self.levelStars[level] = stars
+            }
+            
+            // Save statistics if provided
+            if let stats = stats {
+                self.levelStatistics.recordLevelCompletion(level: level, stats: stats)
+            }
             
             // Unlock next level if not already unlocked
             if level < 50 {
@@ -135,5 +164,10 @@ class GameState: ObservableObject {
         self.completedLevels = saved.completedLevels
         self.levelFailures = saved.levelFailures
         self.selectedLevel = saved.selectedLevel
+        self.levelStars = saved.levelStars
+    }
+    
+    func getStarsForLevel(_ level: Int) -> Int {
+        return levelStars[level] ?? 0
     }
 }
