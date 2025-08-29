@@ -209,6 +209,7 @@ struct GameStatsView: View {
                 timeRemaining: gameManager.timeRemaining,
                 isComplete: gameManager.levelComplete
             )
+            .environmentObject(gameManager)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 15)
@@ -340,6 +341,7 @@ struct FuturisticScoreDisplay: View {
 struct FuturisticTimerDisplay: View {
     let timeRemaining: Int
     let isComplete: Bool
+    @EnvironmentObject var gameManager: GameManager
     @State private var timerPulse = false
     @State private var criticalTime = false
     @State private var lastTimeUpdate: Int = -1
@@ -414,6 +416,15 @@ struct FuturisticTimerDisplay: View {
                             .foregroundColor(GameConstants.UI.tertiaryText)
                     }
                     .scaleEffect(timerPulse ? 1.05 : 1.0)
+                }
+                
+                // Time adjustment feedback
+                if gameManager.timeAdjustment != 0 {
+                    Text("\(gameManager.timeAdjustment > 0 ? "+" : "")\(gameManager.timeAdjustment) sec")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundColor(gameManager.timeAdjustment > 0 ? .green : .red)
+                        .scaleEffect(1.2)
+                        .transition(.scale.combined(with: .opacity))
                 }
             }
         }

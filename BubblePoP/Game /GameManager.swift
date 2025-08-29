@@ -1,6 +1,7 @@
 // MARK: - GameManager.swift
 import SwiftUI
 import Combine
+import AudioToolbox
 #if os(iOS)
 import UIKit
 #endif
@@ -8,6 +9,30 @@ import UIKit
 enum GameResult {
     case completed
     case failed
+}
+
+// MARK: - SoundManager
+class SoundManager {
+    static let shared = SoundManager()
+    
+    // System sound IDs for different balloon pop sounds
+    private let positiveBalloonSound: SystemSoundID = 1057 // "Tink" sound - light and pleasant
+    private let negativeBalloonSound: SystemSoundID = 1053 // "Pop" sound - deeper
+    private let levelCompleteSound: SystemSoundID = 1025   // "Camera shutter" - success sound
+    
+    private init() {}
+    
+    func playPositivePop() {
+        AudioServicesPlaySystemSound(positiveBalloonSound)
+    }
+    
+    func playNegativePop() {
+        AudioServicesPlaySystemSound(negativeBalloonSound)
+    }
+    
+    func playLevelComplete() {
+        AudioServicesPlaySystemSound(levelCompleteSound)
+    }
 }
 
 struct PopEffect: Identifiable {
@@ -33,6 +58,7 @@ class GameManager: ObservableObject {
     @Published var gameResult: GameResult?
     @Published var currentLevelStats = GameStatistics()
     @Published var starRating: Int = 0
+    @Published var timeAdjustment: Int = 0 // For visual feedback of time changes
     
     // Simple balloon management
     
@@ -52,6 +78,7 @@ class GameManager: ObservableObject {
     private var positionIndex: Int = 0
     private var sessionStartTime: Date = Date()
     private var lastMemoryCleanup: Date = Date()
+    private var initialTimeLimit: Int = 60 // Store original time limit for capping
     
     func setupGame(level: Int, screenSize: CGSize = CGSize(width: 393, height: 852)) {
         currentLevel = level
@@ -63,6 +90,7 @@ class GameManager: ObservableObject {
         gameActive = true
         score = 0
         timeRemaining = LevelConfiguration.timeAllowed(for: currentLevel)
+        initialTimeLimit = timeRemaining // Store the initial time limit
         waterLevel = 0.0
         balloons = []
         balloonCount = 0
@@ -73,6 +101,7 @@ class GameManager: ObservableObject {
         recentSpawnPositions = [] // Clear spawn history
         currentLevelStats = GameStatistics()
         starRating = 0
+        timeAdjustment = 0
         
         // Reset memory management timestamps
         sessionStartTime = Date()
@@ -92,9 +121,17 @@ class GameManager: ObservableObject {
         if balloon.isPositive {
             score += balloon.points
             currentLevelStats.positiveBalloonsPopped += 1
+            // Reward correct balloon with time bonus
+            adjustTime(isPositive: true)
+            // Play positive pop sound
+            SoundManager.shared.playPositivePop()
         } else {
             score = max(0, score - balloon.points)
             currentLevelStats.negativeBalloonsPopped += 1
+            // Penalize wrong balloon with time loss
+            adjustTime(isPositive: false)
+            // Play negative pop sound
+            SoundManager.shared.playNegativePop()
         }
         currentLevelStats.totalBalloonsPopped += 1
         
@@ -116,8 +153,35 @@ class GameManager: ObservableObject {
     }
     
     func retryLevel() {
+        // Reset all overlay states
         showFailure = false
+        showLevelUp = false
+        levelComplete = false
+        gameResult = nil
+        
         startGame()
+    }
+    
+    private func adjustTime(isPositive: Bool) {
+        let adjustment: Int
+        
+        if isPositive {
+            // Correct balloon: add 1-2 seconds
+            adjustment = Int.random(in: 1...2)
+            timeRemaining = min(timeRemaining + adjustment, initialTimeLimit) // Cap at initial time
+        } else {
+            // Wrong balloon: subtract 3-5 seconds
+            adjustment = Int.random(in: 3...5)
+            timeRemaining = max(0, timeRemaining - adjustment) // Don't go below 0
+        }
+        
+        // Store the adjustment for visual feedback
+        timeAdjustment = isPositive ? adjustment : -adjustment
+        
+        // Clear the visual feedback after a short delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            self.timeAdjustment = 0
+        }
     }
     
     private func startGameTimer() {
@@ -297,6 +361,9 @@ class GameManager: ObservableObject {
         levelComplete = true
         waterLevel = 1.0
         
+        // Play level complete sound
+        SoundManager.shared.playLevelComplete()
+        
         // Calculate star rating
         starRating = LevelConfiguration.getStarRating(balloonsPopped: currentLevelStats.totalBalloonsPopped, for: currentLevel)
         currentLevelStats.starRating = starRating
@@ -327,6 +394,7 @@ class GameManager: ObservableObject {
         gameActive = false
         balloons = []
         timeRemaining = LevelConfiguration.timeAllowed(for: currentLevel)
+        initialTimeLimit = timeRemaining
         waterLevel = 0.0
         levelComplete = false
         showLevelUp = false
@@ -336,6 +404,7 @@ class GameManager: ObservableObject {
         mainGameTimer?.invalidate()
         currentLevelStats = GameStatistics()
         starRating = 0
+        timeAdjustment = 0
         
         // Simple reset
         
