@@ -36,10 +36,37 @@ class SoundManager {
 }
 
 struct PopEffect: Identifiable {
-    let id = UUID()
+    let id: Int
     let position: CGPoint
     let color: Color
     let isPositive: Bool
+    
+    // Static counter for efficient ID generation (much faster than UUID)
+    private static var nextID: Int = 0
+    
+    init(position: CGPoint, color: Color, isPositive: Bool) {
+        PopEffect.nextID += 1
+        self.id = PopEffect.nextID
+        self.position = position
+        self.color = color
+        self.isPositive = isPositive
+    }
+}
+
+struct ColorSplash: Identifiable {
+    let id: Int
+    let position: CGPoint
+    let color: Color
+    
+    // Static counter for efficient ID generation
+    private static var nextID: Int = 0
+    
+    init(position: CGPoint, color: Color) {
+        ColorSplash.nextID += 1
+        self.id = ColorSplash.nextID
+        self.position = position
+        self.color = color
+    }
 }
 
 class GameManager: ObservableObject {
@@ -47,7 +74,6 @@ class GameManager: ObservableObject {
     @Published var gameActive = false
     @Published var balloons: [GameBalloon] = []
     @Published var timeRemaining = 60
-    @Published var waterLevel: Double = 0.0
     @Published var showPopAnimation = false
     @Published var popEffects: [PopEffect] = []
     private let maxPopEffects = PerformanceDetector.shared.maxConcurrentEffects
@@ -59,10 +85,15 @@ class GameManager: ObservableObject {
     @Published var currentLevelStats = GameStatistics()
     @Published var starRating: Int = 0
     @Published var timeAdjustment: Int = 0 // For visual feedback of time changes
+    @Published var colorSplashes: [ColorSplash] = [] // For background color effects
+    
+    // Timer for clearing time adjustment feedback to prevent memory leaks
+    private var timeAdjustmentTimer: Timer?
     
     // Simple balloon management
     
     private var mainGameTimer: Timer?
+    private var spawnTimer: Timer?
     private var lastSpawnTime: Date = Date()
     private var spawnInterval: TimeInterval = 0.4
     private var lastSecondUpdate: Int = 0
@@ -91,7 +122,6 @@ class GameManager: ObservableObject {
         score = 0
         timeRemaining = LevelConfiguration.timeAllowed(for: currentLevel)
         initialTimeLimit = timeRemaining // Store the initial time limit
-        waterLevel = 0.0
         balloons = []
         balloonCount = 0
         positiveSpawned = 0
@@ -113,8 +143,11 @@ class GameManager: ObservableObject {
     func stopGame() {
         gameActive = false
         mainGameTimer?.invalidate()
+        spawnTimer?.invalidate()
+        timeAdjustmentTimer?.invalidate()
         balloons = []
         popEffects.removeAll() // Clear effects when stopping
+        colorSplashes.removeAll() // Clear color splashes when stopping
     }
     
     func popBalloon(_ balloon: GameBalloon) {
@@ -135,8 +168,8 @@ class GameManager: ObservableObject {
         }
         currentLevelStats.totalBalloonsPopped += 1
         
-        updateWaterLevel()
         triggerPopAnimation(at: CGPoint(x: balloon.x, y: balloon.y), color: balloon.color, isPositive: balloon.isPositive)
+        triggerColorSplash(at: CGPoint(x: balloon.x, y: balloon.y), color: balloon.color)
         
         // Simple balloon removal
         removeBalloon(balloon)
@@ -178,9 +211,13 @@ class GameManager: ObservableObject {
         // Store the adjustment for visual feedback
         timeAdjustment = isPositive ? adjustment : -adjustment
         
-        // Clear the visual feedback after a short delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            self.timeAdjustment = 0
+        // Clear existing timer to prevent multiple timers
+        timeAdjustmentTimer?.invalidate()
+        
+        // Use proper timer instead of DispatchQueue to prevent memory leaks
+        timeAdjustmentTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { [weak self] _ in
+            self?.timeAdjustment = 0
+            self?.timeAdjustmentTimer = nil
         }
     }
     
@@ -189,47 +226,45 @@ class GameManager: ObservableObject {
         lastSpawnTime = Date()
         lastSecondUpdate = Int(Date().timeIntervalSince1970)
         
-        // Fixed 60fps timer for smooth gameplay
-        mainGameTimer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { _ in
-            self.updateGame()
+        // Efficient 1-second timer for time updates
+        mainGameTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.updateTimeAndCleanup()
+        }
+        
+        // Separate timer for spawning at the required interval
+        spawnTimer = Timer.scheduledTimer(withTimeInterval: spawnInterval, repeats: true) { [weak self] _ in
+            self?.handleSpawning()
         }
     }
     
-    private func updateGame() {
-        // Prevent hanging by limiting work per frame
+    private func updateTimeAndCleanup() {
         guard gameActive else { return }
         
-        let now = Date()
-        let currentSecond = Int(now.timeIntervalSince1970)
+        // Update time once per second
+        timeRemaining -= 1
         
-        // Update time once per second - simplified
-        if currentSecond != lastSecondUpdate {
-            timeRemaining -= 1
-            lastSecondUpdate = currentSecond
-            
-            // Simple cleanup every 5 seconds
-            if timeRemaining % 5 == 0 {
-                cleanupExpiredEffects()
-            }
-            
-            // Check win/lose condition
-            if timeRemaining <= 0 {
-                if score >= LevelConfiguration.pointsNeeded(for: currentLevel) {
-                    completeLevel()
-                } else {
-                    failLevel()
-                }
-                return
-            }
+        // Simple cleanup every 5 seconds
+        if timeRemaining % 5 == 0 {
+            cleanupExpiredEffects()
         }
         
-        // Handle spawning based on interval - limit balloon creation rate
-        if now.timeIntervalSince(lastSpawnTime) >= spawnInterval && balloons.count < 8 {
-            if gameActive && score < LevelConfiguration.pointsNeeded(for: currentLevel) {
-                spawnBalloon()
-                lastSpawnTime = now
+        // Check win/lose condition
+        if timeRemaining <= 0 {
+            if score >= LevelConfiguration.pointsNeeded(for: currentLevel) {
+                completeLevel()
+            } else {
+                failLevel()
             }
+            return
         }
+    }
+    
+    private func handleSpawning() {
+        guard gameActive else { return }
+        guard balloons.count < 8 else { return }
+        guard score < LevelConfiguration.pointsNeeded(for: currentLevel) else { return }
+        
+        spawnBalloon()
     }
     
     private func cleanupExpiredEffects() {
@@ -313,8 +348,14 @@ class GameManager: ObservableObject {
         }
     }
     
-    private func updateWaterLevel() {
-        waterLevel = min(Double(score) / Double(LevelConfiguration.pointsNeeded(for: currentLevel)), 1.0)
+    private func triggerColorSplash(at position: CGPoint, color: Color) {
+        let splash = ColorSplash(position: position, color: color)
+        colorSplashes.append(splash)
+        
+        // Remove splash after animation completes (longer for paint effect)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            self.colorSplashes.removeAll { $0.id == splash.id }
+        }
     }
     
     private func triggerPopAnimation(at position: CGPoint, color: Color, isPositive: Bool) {
@@ -359,7 +400,6 @@ class GameManager: ObservableObject {
         mainGameTimer?.invalidate()
         balloons = []
         levelComplete = true
-        waterLevel = 1.0
         
         // Play level complete sound
         SoundManager.shared.playLevelComplete()
@@ -395,13 +435,14 @@ class GameManager: ObservableObject {
         balloons = []
         timeRemaining = LevelConfiguration.timeAllowed(for: currentLevel)
         initialTimeLimit = timeRemaining
-        waterLevel = 0.0
         levelComplete = false
         showLevelUp = false
         showFailure = false
         failureMessage = ""
         gameResult = nil
         mainGameTimer?.invalidate()
+        spawnTimer?.invalidate()
+        timeAdjustmentTimer?.invalidate()
         currentLevelStats = GameStatistics()
         starRating = 0
         timeAdjustment = 0
@@ -410,6 +451,7 @@ class GameManager: ObservableObject {
         
         // Clear all effects to prevent memory leaks
         popEffects.removeAll()
+        colorSplashes.removeAll()
         recentSpawnPositions.removeAll()
     }
 }

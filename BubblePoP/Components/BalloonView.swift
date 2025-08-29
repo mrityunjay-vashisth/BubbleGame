@@ -8,31 +8,41 @@ struct BalloonView: View {
     @State private var scale: Double = 0.1
     @State private var floatOffset: Double = 0
     
-    // Pre-computed sizing for better performance
-    private var sizeMultiplier: Double {
-        // Use lookup table for common point values to avoid repeated calculations
+    // Pre-computed sizing for better performance - computed once and cached
+    private let sizeMultiplier: Double
+    private let balloonWidth: Double
+    private let balloonHeight: Double
+    private let frameWidth: Double
+    private let frameHeight: Double
+    private let fontSize: Double
+    private let stringHeight: Double
+    
+    init(balloon: GameBalloon, onTap: @escaping () -> Void) {
+        self.balloon = balloon
+        self.onTap = onTap
+        
+        // Pre-compute all size-related values once in initializer
         switch balloon.points {
-        case 1: return 0.5
-        case 2: return 0.7
-        case 3: return 0.9
-        case 4: return 1.1
-        case 5: return 1.3
-        default: return max(0.4, 0.3 + (Double(balloon.points) * 0.2))
+        case 1: self.sizeMultiplier = 0.5
+        case 2: self.sizeMultiplier = 0.7
+        case 3: self.sizeMultiplier = 0.9
+        case 4: self.sizeMultiplier = 1.1
+        case 5: self.sizeMultiplier = 1.3
+        default: self.sizeMultiplier = max(0.4, 0.3 + (Double(balloon.points) * 0.2))
         }
-    }
-    
-    // Cache computed values to avoid repeated calculations
-    private var balloonWidth: Double {
-        GameConstants.balloonSize.width * sizeMultiplier
-    }
-    
-    private var balloonHeight: Double {
-        GameConstants.balloonSize.height * sizeMultiplier
+        
+        // Cache all derived calculations
+        self.balloonWidth = GameConstants.balloonSize.width * sizeMultiplier
+        self.balloonHeight = GameConstants.balloonSize.height * sizeMultiplier
+        self.frameWidth = balloonWidth * 1.3
+        self.frameHeight = balloonHeight * 1.3
+        self.fontSize = 12 + (6 * sizeMultiplier)
+        self.stringHeight = 25 * sizeMultiplier
     }
     
     var body: some View {
         ZStack {
-            // Shadow (scaled with balloon)
+            // Shadow (using pre-computed values)
             BalloonShadow(width: balloonWidth * 1.1, height: balloonHeight * 1.1)
             
             // Main balloon with water effect
@@ -42,22 +52,19 @@ struct BalloonView: View {
                 height: balloonHeight
             )
             
-            // String (length scales with balloon size)
-            BalloonString(height: 25 * sizeMultiplier)
+            // String (using pre-computed height)
+            BalloonString(height: stringHeight)
             
-            // Points display (scales with balloon)
+            // Points display (using pre-computed font size)
             PointsDisplay(
                 balloon: balloon,
-                fontSize: 12 + (6 * sizeMultiplier)
+                fontSize: fontSize
             )
         }
-        .frame(width: balloonWidth * 1.3, height: balloonHeight * 1.3)
+        .frame(width: frameWidth, height: frameHeight)
         .contentShape(
             Ellipse()
-                .size(
-                    width: balloonWidth * 1.3,
-                    height: balloonHeight * 1.3
-                )
+                .size(width: frameWidth, height: frameHeight)
         )
         .position(x: balloon.x, y: balloon.y + floatOffset)
         .scaleEffect(scale)

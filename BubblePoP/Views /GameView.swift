@@ -16,20 +16,21 @@ struct GameView: View {
                     
                     // Animated bubbles in background
                     BackgroundBubbles()
+                    
+                    // Color splash effects from balloon pops
+                    ForEach(gameManager.colorSplashes) { splash in
+                        ColorSplashView(position: splash.position, color: splash.color)
+                    }
                 }
                 .ignoresSafeArea()
                 .zIndex(0)
                 
-                // Layer 2: Water fill effect
-                WaterFillView(waterLevel: gameManager.waterLevel, geometry: geometry)
-                    .zIndex(1)
-                
-                // Layer 3: Game play area (balloons spawn here)
+                // Layer 2: Game play area (balloons spawn here)
                 GameAreaView()
                     .environmentObject(gameManager)
-                    .zIndex(2)
+                    .zIndex(1)
                 
-                // Layer 4: UI Controls (always on top)
+                // Layer 3: UI Controls (always on top)
                 VStack(spacing: 0) {
                     // Header
                     GameHeaderView()
@@ -49,20 +50,20 @@ struct GameView: View {
                         .environmentObject(gameState)
                         .environmentObject(gameManager)
                 }
-                .zIndex(3)
+                .zIndex(2)
                 
-                // Layer 5: Overlays (highest priority)
+                // Layer 4: Overlays (highest priority)
                 GameOverlaysView()
                     .environmentObject(gameState)
                     .environmentObject(gameManager)
-                    .zIndex(4)
+                    .zIndex(3)
                 
                 // Debug spawn area (development only)
                 SpawnAreaDebugView(
                     screenSize: geometry.size,
                     showBounds: GameConstants.showSpawnAreaBounds
                 )
-                .zIndex(5)
+                .zIndex(4)
             }
             .onAppear {
                 // Use geometry size from GeometryReader context

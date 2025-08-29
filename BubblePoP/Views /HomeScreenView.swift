@@ -48,86 +48,130 @@ struct HomeScreenView: View {
     }
 }
 
-// MARK: - Futuristic Background
+// MARK: - Optimized Futuristic Background
 struct FuturisticBackground: View {
     @Binding var animateGradient: Bool
     
+    // Cache expensive gradients as static properties
+    private static let baseGradient = LinearGradient(
+        colors: [
+            Color(red: 0.95, green: 0.6, blue: 0.4),
+            Color(red: 0.4, green: 0.7, blue: 0.9),
+            Color(red: 0.5, green: 0.3, blue: 0.8)
+        ],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+    
+    private static let overlayGradient = RadialGradient(
+        colors: [
+            GameConstants.UI.accent.opacity(0.3),
+            Color.clear,
+            GameConstants.UI.success.opacity(0.2),
+            Color.clear
+        ],
+        center: .center,
+        startRadius: 100,
+        endRadius: 400
+    )
+    
     var body: some View {
         ZStack {
-            // Base gradient
-            LinearGradient(
-                colors: [
-                    Color(red: 0.95, green: 0.6, blue: 0.4),
-                    Color(red: 0.4, green: 0.7, blue: 0.9),
-                    Color(red: 0.5, green: 0.3, blue: 0.8)
-                ],
-                startPoint: animateGradient ? .topLeading : .bottomLeading,
-                endPoint: animateGradient ? .bottomTrailing : .topTrailing
-            )
-            .ignoresSafeArea()
-            .hueRotation(Angle(degrees: animateGradient ? 30 : 0))
-            .opacity(0.15)
-            
-            // Mesh gradient overlay
-            RadialGradient(
-                colors: [
-                    GameConstants.UI.accent.opacity(0.3),
-                    Color.clear,
-                    GameConstants.UI.success.opacity(0.2),
-                    Color.clear
-                ],
-                center: animateGradient ? .topLeading : .bottomTrailing,
-                startRadius: 100,
-                endRadius: 400
-            )
-            .ignoresSafeArea()
-            .blendMode(.overlay)
+            // Simplified background - removed expensive hue rotation
+            if PerformanceDetector.shared.enableComplexAnimations {
+                Self.baseGradient
+                    .ignoresSafeArea()
+                    .opacity(animateGradient ? 0.2 : 0.15)
+                    .animation(.easeInOut(duration: 3), value: animateGradient)
+                
+                Self.overlayGradient
+                    .ignoresSafeArea()
+                    .blendMode(.overlay)
+                    .opacity(animateGradient ? 0.8 : 0.5)
+            } else {
+                // Static background for low-performance devices
+                GameConstants.UI.background
+            }
         }
         .background(GameConstants.UI.background)
     }
 }
 
-// MARK: - Floating Orbs
+// MARK: - Optimized Floating Orbs
 struct FloatingOrbsView: View {
     let geometry: GeometryProxy
-    @State private var orbPositions: [CGPoint] = []
+    @State private var orbData: [OrbData] = []
     
     var body: some View {
         ZStack {
-            ForEach(0..<8, id: \.self) { index in
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                GameConstants.balloonColors[index % GameConstants.balloonColors.count].opacity(0.4),
-                                GameConstants.balloonColors[index % GameConstants.balloonColors.count].opacity(0.1)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
+            // Reduce orb count based on device performance
+            let orbCount = PerformanceDetector.shared.enableComplexAnimations ? 6 : 3
+            
+            ForEach(0..<orbCount, id: \.self) { index in
+                if index < orbData.count {
+                    Circle()
+                        .fill(orbData[index].cachedGradient)
+                        .frame(width: orbData[index].size)
+                        .blur(radius: 8)
+                        .position(
+                            x: orbData[index].position.x,
+                            y: orbData[index].position.y
                         )
-                    )
-                    .frame(width: CGFloat.random(in: 80...150))
-                    .blur(radius: 10)
-                    .position(
-                        x: CGFloat.random(in: 0...geometry.size.width),
-                        y: CGFloat.random(in: 0...geometry.size.height)
-                    )
-                    .animation(
-                        Animation.easeInOut(duration: Double.random(in: 15...25))
-                            .repeatForever(autoreverses: true)
-                            .delay(Double(index) * 0.5),
-                        value: orbPositions
-                    )
+                        .animation(
+                            Animation.easeInOut(duration: orbData[index].duration)
+                                .repeatForever(autoreverses: true)
+                                .delay(Double(index) * 0.8),
+                            value: orbData
+                        )
+                }
             }
         }
         .onAppear {
-            orbPositions = (0..<8).map { _ in
-                CGPoint(
-                    x: CGFloat.random(in: 0...geometry.size.width),
-                    y: CGFloat.random(in: 0...geometry.size.height)
-                )
-            }
+            setupOrbs()
         }
+    }
+    
+    private func setupOrbs() {
+        let orbCount = PerformanceDetector.shared.enableComplexAnimations ? 6 : 3
+        orbData = (0..<orbCount).map { index in
+            OrbData(
+                position: CGPoint(
+                    x: CGFloat.random(in: 50...geometry.size.width - 50),
+                    y: CGFloat.random(in: 100...geometry.size.height - 100)
+                ),
+                size: CGFloat.random(in: 60...120),
+                duration: Double.random(in: 20...30),
+                colorIndex: index % GameConstants.balloonColors.count
+            )
+        }
+    }
+}
+
+// Pre-computed orb data to avoid runtime calculations
+struct OrbData: Equatable {
+    let position: CGPoint
+    let size: CGFloat
+    let duration: Double
+    let colorIndex: Int
+    
+    // Cache gradient to avoid recreation
+    var cachedGradient: LinearGradient {
+        LinearGradient(
+            colors: [
+                GameConstants.balloonColors[colorIndex].opacity(0.4),
+                GameConstants.balloonColors[colorIndex].opacity(0.1)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+    
+    // Equatable conformance for SwiftUI animations
+    static func == (lhs: OrbData, rhs: OrbData) -> Bool {
+        return lhs.position == rhs.position &&
+               lhs.size == rhs.size &&
+               lhs.duration == rhs.duration &&
+               lhs.colorIndex == rhs.colorIndex
     }
 }
 

@@ -2,7 +2,7 @@
 import Foundation
 import SwiftUI
 
-// MARK: - Persistence Manager
+// MARK: - High-Performance Persistence Manager
 class GameStatePersistence {
     private static let unlockedLevelsKey = "UnlockedLevels"
     private static let completedLevelsKey = "CompletedLevels"
@@ -10,25 +10,56 @@ class GameStatePersistence {
     private static let selectedLevelKey = "SelectedLevel"
     private static let levelStarsKey = "LevelStars"
     
+    // Background queue for async operations to prevent main thread blocking
+    private static let persistenceQueue = DispatchQueue(label: "game.persistence", qos: .utility)
+    
+    // Debouncing to prevent excessive saves
+    private static var saveTimer: Timer?
+    
     static func save(gameState: GameState) {
-        let defaults = UserDefaults.standard
+        // Cancel previous timer to debounce rapid saves
+        saveTimer?.invalidate()
         
-        // Save as arrays for UserDefaults compatibility
-        defaults.set(Array(gameState.unlockedLevels), forKey: unlockedLevelsKey)
-        defaults.set(Array(gameState.completedLevels), forKey: completedLevelsKey)
-        
-        // Convert [Int: Int] dictionary to [String: Int] for UserDefaults compatibility
-        let levelFailuresForStorage = gameState.levelFailures.reduce(into: [String: Int]()) { result, pair in
-            result[String(pair.key)] = pair.value
+        // Debounce saves - only save after 2 seconds of inactivity
+        saveTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { _ in
+            performSave(gameState: gameState)
         }
-        defaults.set(levelFailuresForStorage, forKey: levelFailuresKey)
-        defaults.set(gameState.selectedLevel, forKey: selectedLevelKey)
+    }
+    
+    private static func performSave(gameState: GameState) {
+        // Capture data on main thread
+        let unlockedArray = Array(gameState.unlockedLevels)
+        let completedArray = Array(gameState.completedLevels)
+        let failures = gameState.levelFailures
+        let selectedLevel = gameState.selectedLevel
+        let stars = gameState.levelStars
         
-        // Save star ratings
-        let levelStarsForStorage = gameState.levelStars.reduce(into: [String: Int]()) { result, pair in
-            result[String(pair.key)] = pair.value
+        // Perform expensive operations on background thread
+        persistenceQueue.async {
+            let defaults = UserDefaults.standard
+            
+            // Pre-convert dictionaries to avoid repeated conversions
+            let levelFailuresForStorage = failures.reduce(into: [String: Int]()) { result, pair in
+                result[String(pair.key)] = pair.value
+            }
+            
+            let levelStarsForStorage = stars.reduce(into: [String: Int]()) { result, pair in
+                result[String(pair.key)] = pair.value
+            }
+            
+            // Batch all UserDefaults operations
+            defaults.set(unlockedArray, forKey: unlockedLevelsKey)
+            defaults.set(completedArray, forKey: completedLevelsKey)
+            defaults.set(levelFailuresForStorage, forKey: levelFailuresKey)
+            defaults.set(selectedLevel, forKey: selectedLevelKey)
+            defaults.set(levelStarsForStorage, forKey: levelStarsKey)
         }
-        defaults.set(levelStarsForStorage, forKey: levelStarsKey)
+    }
+    
+    // Immediate save for critical operations (like app backgrounding)
+    static func saveImmediately(gameState: GameState) {
+        saveTimer?.invalidate()
+        performSave(gameState: gameState)
     }
     
     static func load() -> (unlockedLevels: Set<Int>, completedLevels: Set<Int>, levelFailures: [Int: Int], selectedLevel: Int, levelStars: [Int: Int]) {
@@ -165,6 +196,11 @@ class GameState: ObservableObject {
         self.levelFailures = saved.levelFailures
         self.selectedLevel = saved.selectedLevel
         self.levelStars = saved.levelStars
+        
+        // Always ensure level 1 is unlocked
+        if !self.unlockedLevels.contains(1) {
+            self.unlockedLevels.insert(1)
+        }
     }
     
     func getStarsForLevel(_ level: Int) -> Int {
